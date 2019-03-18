@@ -8,7 +8,7 @@ def read(fname):
 
 setup(
     name='mkdocs-htmlproofer-plugin',
-    version='0.0.1',
+    version='0.0.2',
     description='A MkDocs plugin that injects the mkdocs.yml extra variables into the markdown template',
     long_description=read('README.md'),
     keywords='mkdocs python markdown extra values',
