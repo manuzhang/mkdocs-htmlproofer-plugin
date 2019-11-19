@@ -11,6 +11,7 @@ setup(
     version='0.0.3.dev',
     description='A MkDocs plugin that injects the mkdocs.yml extra variables into the markdown template',
     long_description=read('README.md'),
+    long_description_content_type='text/markdown',
     keywords='mkdocs python markdown extra values',
     url='https://github.com/manuzhang/mkdocs-htmlproofer-plugin',
     author='Manu Zhang',
