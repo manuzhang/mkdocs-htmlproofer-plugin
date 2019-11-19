@@ -1,6 +1,7 @@
 from mkdocs.plugins import BasePlugin
 
 from bs4 import BeautifulSoup
+import re
 import requests
 import urllib3
 import uuid
@@ -30,7 +31,7 @@ class HtmlProoferPlugin(BasePlugin):
             if url.startswith('http://' + local):
                 return (url, 0)
         clean_url = url.strip('?.')
-        if clean_url.startswith('http://'):
+        if re.match('https?://', clean_url):
             try:
                 response = requests.get(
                     clean_url, verify=False, timeout=URL_TIMEOUT,
