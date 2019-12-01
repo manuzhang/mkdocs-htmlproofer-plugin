@@ -1,19 +1,22 @@
 # mkdocs-htmlproofer-plugin
 
-*A MkDocs plugin that validates URL in rendered html files*
+*A [MkDocs](https://www.mkdocs.org/) plugin that validates URL in rendered html files*
 
 
 ## Installation
 
-> **Note:** This package requires MkDocs version 0.17 or higher. 
+0. Prerequisites
 
-Install the package with pip:
+* Python >= 3.5
+* MkDocs >= 0.17
+
+1. Install the package with pip:
 
 ```bash
 pip install mkdocs-htmlproofer-plugin
 ```
 
-Enable the plugin in your `mkdocs.yml`:
+2. Enable the plugin in your `mkdocs.yml`:
 
 ```yaml
 plugins:
