@@ -1,4 +1,4 @@
-# mkdocs-htmlproofer-plugin ![version](https://img.shields.io/pypi/v/mkdocs-htmlproofer-plugin)
+# mkdocs-htmlproofer-plugin [![PyPI - Version](https://img.shields.io/pypi/v/mkdocs-htmlproofer-plugin.svg)](https://pypi.org/project/mkdocs-htmlproofer-plugin)
 
 *A [MkDocs](https://www.mkdocs.org/) plugin that validates URL in rendered html files*
 
