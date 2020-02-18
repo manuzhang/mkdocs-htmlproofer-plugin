@@ -9,10 +9,10 @@ def read(fname):
 setup(
     name='mkdocs-htmlproofer-plugin',
     version='0.1.0.dev',
-    description='A MkDocs plugin that injects the mkdocs.yml extra variables into the markdown template',
+    description='A MkDocs plugin that validates URL in rendered HTML files',
     long_description=read('README.md'),
     long_description_content_type='text/markdown',
-    keywords='mkdocs python markdown extra values',
+    keywords='mkdocs python markdown',
     url='https://github.com/manuzhang/mkdocs-htmlproofer-plugin',
     author='Manu Zhang',
     author_email='owenzhang1990@gmail.com',
