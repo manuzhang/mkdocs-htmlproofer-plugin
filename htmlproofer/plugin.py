@@ -52,6 +52,8 @@ class HtmlProoferPlugin(BasePlugin):
             return False
         elif url_status == 503:
             return False
+        elif url_status == 999:
+            return False
         elif url_status >= 400:
             return True
         return False
