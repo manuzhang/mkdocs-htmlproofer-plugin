@@ -52,6 +52,9 @@ class HtmlProoferPlugin(BasePlugin):
             return False
         elif url_status == 503:
             return False
+        elif url_status == 999:
+            # Returned by some websites (e.g. LinkedIn) that think you're crawling them.
+            return False
         elif url_status >= 400:
             return True
         return False
