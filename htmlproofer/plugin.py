@@ -1,3 +1,4 @@
+from mkdocs.config import config_options
 from mkdocs.plugins import BasePlugin
 
 from bs4 import BeautifulSoup
@@ -15,6 +16,11 @@ urllib3.disable_warnings()
 
 class HtmlProoferPlugin(BasePlugin):
 
+    config_scheme = (
+        ('raise_error', config_options.Type(bool, default=False)),
+        ('raise_error_excludes', config_options.Type(list, default=[]))
+    )
+
     def on_post_page(self, output_content, config, **kwargs):
         soup = BeautifulSoup(output_content, 'html.parser')
         local = ['localhost', '127.0.0.1']
@@ -22,7 +28,12 @@ class HtmlProoferPlugin(BasePlugin):
             url = a['href']
             clean_url, url_status = self.get_url_status(url)
             if self.bad_url(url_status) is True:
-                print('{}: {}\n'.format(clean_url, url_status))
+                error = '{}: {}\n'.format(clean_url, url_status)
+                excludes = self.config['raise_error_excludes']
+                if self.config['raise_error'] and (url not in excludes) and (url_status not in excludes):
+                    raise Exception(error)
+                else:
+                    print(error)
 
 
 
