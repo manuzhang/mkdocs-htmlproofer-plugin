@@ -2,6 +2,7 @@ from mkdocs.config import config_options
 from mkdocs.plugins import BasePlugin
 
 from bs4 import BeautifulSoup
+from functools import lru_cache
 import re
 import requests
 import urllib3
@@ -36,8 +37,7 @@ class HtmlProoferPlugin(BasePlugin):
                 else:
                     print(error)
 
-
-
+    @lru_cache(maxsize = 500)
     def get_url_status(self, url):
         for local in ('localhost', '127.0.0.1', 'app_server'):
             if url.startswith('http://' + local):
