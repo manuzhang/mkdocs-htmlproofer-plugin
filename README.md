@@ -33,14 +33,17 @@ plugins:
         raise_error: True
 ```
 
-That can be switched off for some url or status codes by adding it to `raise_error_excludes` list.
+That can be switched off for combinations of urls (`'*'` means all urls) and status codes with `raise_error_excludes`.
 
 ```yaml
 plugins:
     - search
     - htmlproofer:
         raise_error: True
-        raise_error_excludes: [504, 'https://www.mkdocs.org/']
+        raise_error_excludes: 
+          504: ['https://www.mkdocs.org/']
+          404: ['https://github.com/manuzhang/mkdocs-htmlproofer-plugin']
+          400: ['*']
 ```
 
 > **Note:** If you have no `plugins` entry in your config file yet, you'll likely also want to add the `search` plugin. MkDocs enables it by default if there is no `plugins` entry set, but now you have to enable it explicitly.

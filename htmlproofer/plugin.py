@@ -18,7 +18,7 @@ class HtmlProoferPlugin(BasePlugin):
 
     config_scheme = (
         ('raise_error', config_options.Type(bool, default=False)),
-        ('raise_error_excludes', config_options.Type(list, default=[]))
+        ('raise_error_excludes', config_options.Type(dict, default={}))
     )
 
     def on_post_page(self, output_content, config, **kwargs):
@@ -30,7 +30,8 @@ class HtmlProoferPlugin(BasePlugin):
             if self.bad_url(url_status) is True:
                 error = '{}: {}\n'.format(clean_url, url_status)
                 excludes = self.config['raise_error_excludes']
-                if self.config['raise_error'] and (url not in excludes) and (url_status not in excludes):
+                if self.config['raise_error'] and (url_status not in excludes or
+                    ('*' not in excludes[url_status] and url not in excludes[url_status])):
                     raise Exception(error)
                 else:
                     print(error)
