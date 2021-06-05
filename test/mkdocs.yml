@@ -1,0 +1,8 @@
+site_name: Test mkdocs-htmlproofer-plugin
+
+plugins:
+    - htmlproofer:
+        raise_error: True
+        raise_error_excludes:
+          504: ['*']
+          404: ['http://www.mkdocs.org/user-guide/plugin'] 
