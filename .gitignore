@@ -37,3 +37,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Tests
+test/site

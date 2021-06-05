@@ -27,7 +27,7 @@ class HtmlProoferPlugin(BasePlugin):
         local = ['localhost', '127.0.0.1']
         for a in soup.find_all('a', href=True):
             url = a['href']
-            clean_url, url_status = self.get_url_status(url)
+            clean_url, url_status = self.get_url_status(url, soup)
             if self.bad_url(url_status) is True:
                 error = '{}: {}\n'.format(clean_url, url_status)
                 excludes = self.config['raise_error_excludes']
@@ -38,12 +38,14 @@ class HtmlProoferPlugin(BasePlugin):
                     print(error)
 
     @lru_cache(maxsize = 500)
-    def get_url_status(self, url):
+    def get_url_status(self, url, soup):
         for local in ('localhost', '127.0.0.1', 'app_server'):
             if url.startswith('http://' + local):
                 return (url, 0)
         clean_url = url.strip('?.')
-        if re.match('https?://', clean_url):
+        if url.startswith('#') and not soup.find(id=url.strip('#')):
+            return (url, 404)
+        elif re.match('https?://', clean_url):
             try:
                 response = requests.get(
                     clean_url, verify=False, timeout=URL_TIMEOUT,
