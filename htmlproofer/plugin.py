@@ -15,6 +15,7 @@ URL_HEADERS = {'User-Agent': _URL_BOT_ID}
 
 urllib3.disable_warnings()
 
+
 class HtmlProoferPlugin(BasePlugin):
 
     config_scheme = (
@@ -24,20 +25,21 @@ class HtmlProoferPlugin(BasePlugin):
 
     def on_post_page(self, output_content, config, **kwargs):
         soup = BeautifulSoup(output_content, 'html.parser')
-        local = ['localhost', '127.0.0.1']
         for a in soup.find_all('a', href=True):
             url = a['href']
             clean_url, url_status = self.get_url_status(url, soup)
             if self.bad_url(url_status) is True:
                 error = '{}: {}\n'.format(clean_url, url_status)
                 excludes = self.config['raise_error_excludes']
-                if self.config['raise_error'] and (url_status not in excludes or
-                    ('*' not in excludes[url_status] and url not in excludes[url_status])):
+                if (self.config['raise_error'] and
+                    (url_status not in excludes or
+                     ('*' not in excludes[url_status] and
+                      url not in excludes[url_status]))):
                     raise Exception(error)
                 else:
                     print(error)
 
-    @lru_cache(maxsize = 500)
+    @lru_cache(maxsize=500)
     def get_url_status(self, url, soup):
         for local in ('localhost', '127.0.0.1', 'app_server'):
             if url.startswith('http://' + local):
@@ -57,7 +59,6 @@ class HtmlProoferPlugin(BasePlugin):
                 return (clean_url, -1)
         else:
             return (url, 0)
-
 
     def bad_url(self, url_status):
         if url_status == -1:
