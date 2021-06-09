@@ -17,7 +17,7 @@ setup(
     author='Manu Zhang',
     author_email='owenzhang1990@gmail.com',
     license='MIT',
-    python_requires='>=3.5',
+    python_requires='>=3.6',
     install_requires=[
         'mkdocs>=0.17',
         'requests',
@@ -30,9 +30,10 @@ setup(
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7'
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
     ],
     packages=find_packages(exclude=['*.tests']),
     entry_points={
