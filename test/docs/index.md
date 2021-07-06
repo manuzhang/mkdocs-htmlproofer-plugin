@@ -53,7 +53,18 @@ plugins:
 
 More information about plugins in the [MkDocs documentation](http://www.mkdocs.org/user-guide/plugin)
 
+## `localhost` URLs
+
+`localhost` URLs are safely ignored by `mkdocs-htmlproofer-plugin` and will not raise warnings:
+
+- <http://localhost>
+
+- <http://127.0.0.1>
+
+- <https://localhost>
+
+- <https://127.0.0.1>
+
 ## Acknowledgement
 
 This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/rosscdh/mkdocs-markdownextradata-plugin) project and the [Finding and Fixing Website Link Rot with Python, BeautifulSoup and Requests](https://www.twilio.com/blog/2018/07/find-fix-website-link-rot-python-beautifulsoup-requests.html) article. 
-

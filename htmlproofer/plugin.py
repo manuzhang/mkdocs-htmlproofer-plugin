@@ -42,7 +42,7 @@ class HtmlProoferPlugin(BasePlugin):
     @lru_cache(maxsize=500)
     def get_url_status(self, url, soup):
         for local in ('localhost', '127.0.0.1', 'app_server'):
-            if url.startswith('http://' + local):
+            if re.match(f'https?://{local}', url):
                 return (url, 0)
         clean_url = url.strip('?.')
         if url.startswith('#') and not soup.find(id=url.strip('#')):
