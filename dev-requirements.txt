@@ -1,0 +1,9 @@
+# Linting.
+flake8
+
+# Type Checking.
+mypy
+types-requests
+
+# Formatting.
+isort
