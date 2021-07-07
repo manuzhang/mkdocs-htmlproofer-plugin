@@ -1,8 +1,9 @@
 import os
-from setuptools import setup, find_packages
+
+from setuptools import find_packages, setup
 
 
-def read(fname):
+def read(fname: str):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 
