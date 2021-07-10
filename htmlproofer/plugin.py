@@ -5,6 +5,7 @@ import uuid
 
 from bs4 import BeautifulSoup
 from mkdocs.config import config_options
+from mkdocs.exceptions import PluginError
 from mkdocs.plugins import BasePlugin
 import requests
 import urllib3
@@ -35,7 +36,7 @@ class HtmlProoferPlugin(BasePlugin):
                     (url_status not in excludes or
                      ('*' not in excludes[url_status] and
                       url not in excludes[url_status]))):
-                    raise Exception(error)
+                    raise PluginError(error)
                 else:
                     print(error)
 
