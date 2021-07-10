@@ -7,4 +7,4 @@ plugins:
         raise_error: True
         raise_error_excludes:
           504: ['*']
-          404: ['http://www.mkdocs.org/user-guide/plugin', '#acknowledge'] 
+          404: ['https://www.mkdocs.org/user-guide/plugin', '#acknowledge']
