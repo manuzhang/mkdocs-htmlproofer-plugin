@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from mkdocs.config import Config, config_options
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import BasePlugin
-from mkdocs.structure.files import Files, File
+from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
 import requests
 import urllib3
