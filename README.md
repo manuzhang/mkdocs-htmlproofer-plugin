@@ -2,8 +2,7 @@
 
 [![GitHub Actions](https://github.com/manuzhang/mkdocs-htmlproofer-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/manuzhang/mkdocs-htmlproofer-plugin/actions/workflows/ci.yml)
 
-*A [MkDocs](https://www.mkdocs.org/) plugin that validates URL in rendered html files*
-
+*A [MkDocs](https://www.mkdocs.org/) plugin that validates URLs, including anchors, in rendered html files*.
 
 ## Installation
 
@@ -55,4 +54,3 @@ More information about plugins in the [MkDocs documentation](http://www.mkdocs.o
 ## Acknowledgement
 
 This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/rosscdh/mkdocs-markdownextradata-plugin) project and the [Finding and Fixing Website Link Rot with Python, BeautifulSoup and Requests](https://www.twilio.com/blog/2018/07/find-fix-website-link-rot-python-beautifulsoup-requests.html) article. 
-
