@@ -3,6 +3,7 @@
 *A [MkDocs](https://www.mkdocs.org/) plugin that validates URL in rendered html files*
 
 ## Table of Contents
+
 * [Installation](#installation)
 * [Acknowledgement](#acknowledge)
 
