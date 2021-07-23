@@ -4,6 +4,7 @@ from typing import Optional, Tuple
 import uuid
 
 from bs4 import BeautifulSoup
+from markdown.extensions.toc import slugify
 from mkdocs.config import Config, config_options
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import BasePlugin
@@ -72,7 +73,7 @@ class HtmlProoferPlugin(BasePlugin):
                 url_target, anchor = match.groups()
                 target_markdown = self.find_source_markdown(url_target, files)
                 if (target_markdown is not None
-                        and not self.contains_heading(target_markdown, anchor)):
+                        and not self.contains_anchor(target_markdown, anchor)):
                     # The corresponding Markdown header for this anchor was not found.
                     return url, 404
 
@@ -87,14 +88,22 @@ class HtmlProoferPlugin(BasePlugin):
         return None
 
     @staticmethod
-    def contains_heading(markdown: str, heading: str) -> bool:
-        """Check if a set of Markdown source text contains a heading."""
+    def contains_anchor(markdown: str, anchor: str) -> bool:
+        """Check if a set of Markdown source text contains a heading that corresponds to a
+        given anchor."""
         for line in markdown.splitlines():
-            # Markdown allows whitespace before headers and MkDocs allows extra things
-            # like image links afterwards. So essentially, we are searching for "# ANCHOR*" here.
-            match = re.match(rf'\s*#+\s*{heading}.*', line, re.IGNORECASE)
+            # Markdown allows whitespace before headers and an arbitrary number of #'s.
+            match = re.match(rf'\s*#+\s*(.*)', line)
             if match is not None:
-                return True
+                heading = match.groups()[0]
+
+                # Headings are allowed to have images after them, of the form:
+                # # Heading [![Image][image-link]]
+                # But these images are not included in the generated anchor, so remove them.
+                heading = heading.split("[")[0].strip()
+                anchor_slug = slugify(heading, '-')
+                if anchor == anchor_slug:
+                    return True
         return False
 
     @staticmethod

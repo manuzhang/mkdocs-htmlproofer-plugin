@@ -21,6 +21,7 @@ setup(
     python_requires='>=3.6',
     install_requires=[
         'mkdocs>=0.17',
+        'Markdown',
         'requests',
         'beautifulsoup4'
     ],
