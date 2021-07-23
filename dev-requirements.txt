@@ -4,6 +4,7 @@ flake8
 # Type Checking.
 mypy
 types-requests
+types-Markdown
 
 # Formatting.
 isort
