@@ -9,4 +9,5 @@ plugins:
           504: ['*']
           404: ['https://www.mkdocs.org/user-guide/plugin',
                 '#acknowledge',
-                'index.html#BAD_ANCHOR']
+                '../index.html#BAD_ANCHOR',
+                'page2.html#BAD_ANCHOR']

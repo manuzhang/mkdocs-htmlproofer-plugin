@@ -1,5 +1,6 @@
 from functools import lru_cache
 import re
+import sys
 from typing import Optional, Tuple
 import uuid
 
@@ -82,9 +83,18 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def find_source_markdown(url: str, files: Files) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
+        # Remove first / from absolute URLs to match how MkDocs stores URLs in its Files.
+        url = url.lstrip("/")
+
         for file in files.src_paths.values():  # type: File
-            if file.url == url:
+            # Using endswith() is to deal with relative URLs that do not contain the full path
+            # to the .html file. This approximation will allow a small number of anchors to be
+            # validated even if they don't exist (if the same Markdown filename is used in
+            # multiple folders), but the alternative is to try to reimplement MkDocs file/URL
+            # generation.
+            if file.url.endswith(url):
                 return file.page.markdown
+        print(f"Warning: Unable to locate Markdown source file for: {url}", file=sys.stderr)
         return None
 
     @staticmethod
