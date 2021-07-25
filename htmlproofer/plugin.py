@@ -72,16 +72,16 @@ class HtmlProoferPlugin(BasePlugin):
             if match is not None:
                 # URL is a link to another local Markdown file that includes an anchor.
                 url_target, anchor = match.groups()
-                target_markdown = self.find_source_markdown(url_target, files)
-                if (target_markdown is not None
-                        and not self.contains_anchor(target_markdown, anchor)):
+                target_markdown = self.find_target_markdown(url_target, files)
+                if (target_markdown is None
+                        or not self.contains_anchor(target_markdown, anchor)):
                     # The corresponding Markdown header for this anchor was not found.
                     return url, 404
 
             return url, 0
 
     @staticmethod
-    def find_source_markdown(url: str, files: Files) -> Optional[str]:
+    def find_target_markdown(url: str, files: Files) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
         # Remove first / from absolute URLs to match how MkDocs stores URLs in its Files.
         url = url.lstrip("/")
