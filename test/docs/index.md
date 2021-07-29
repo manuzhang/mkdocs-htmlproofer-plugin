@@ -3,6 +3,7 @@
 *A [MkDocs](https://www.mkdocs.org/) plugin that validates URL in rendered html files*
 
 ## Table of Contents
+
 * [Installation](#installation)
 * [Acknowledgement](#acknowledge)
 
@@ -10,7 +11,7 @@
 
 0. Prerequisites
 
-* Python >= 3.5
+* Python >= 3.6
 * MkDocs >= 0.17
 
 1. Install the package with pip:

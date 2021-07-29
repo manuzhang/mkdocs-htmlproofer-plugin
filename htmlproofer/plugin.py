@@ -1,12 +1,16 @@
 from functools import lru_cache
 import re
-from typing import Tuple
+import sys
+from typing import Optional, Tuple
 import uuid
 
 from bs4 import BeautifulSoup
-from mkdocs.config import config_options
+from markdown.extensions.toc import slugify
+from mkdocs.config import Config, config_options
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import BasePlugin
+from mkdocs.structure.files import File, Files
+from mkdocs.structure.pages import Page
 import requests
 import urllib3
 
@@ -18,37 +22,42 @@ urllib3.disable_warnings()
 
 
 class HtmlProoferPlugin(BasePlugin):
+    files: Files = None
 
     config_scheme = (
         ('raise_error', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={}))
     )
 
-    def on_post_page(self, output_content: str, config, **kwargs):
+    def on_page_markdown(self, markdown: str, page: Page, config: Config, files: Files) -> None:
+        # Store files to allow inspecting Markdown files in later stages.
+        self.files = files
+
+    def on_post_page(self, output_content: str, page: Page, config: Config) -> None:
         soup = BeautifulSoup(output_content, 'html.parser')
         for a in soup.find_all('a', href=True):
             url = a['href']
-            clean_url, url_status = self.get_url_status(url, soup)
+            clean_url, url_status = self.get_url_status(url, soup, self.files)
             if self.bad_url(url_status) is True:
-                error = f'{clean_url}: {url_status}\n'
+                error = f'{clean_url}: {url_status}'
                 excludes = self.config['raise_error_excludes']
                 if (self.config['raise_error'] and
-                    (url_status not in excludes or
-                     ('*' not in excludes[url_status] and
-                      url not in excludes[url_status]))):
+                        (url_status not in excludes or
+                         ('*' not in excludes[url_status] and
+                          url not in excludes[url_status]))):
                     raise PluginError(error)
                 else:
                     print(error)
 
     @lru_cache(maxsize=500)
-    def get_url_status(self, url: str, soup: BeautifulSoup) -> Tuple[str, int]:
+    def get_url_status(self, url: str, soup: BeautifulSoup, files: Files) -> Tuple[str, int]:
         for local in ('localhost', '127.0.0.1', 'app_server'):
-            if re.match(f'https?://{local}', url):
+            if re.match(rf'https?://{local}', url):
                 return url, 0
         clean_url = url.strip('?.')
         if url.startswith('#') and not soup.find(id=url.strip('#')):
             return url, 404
-        elif re.match('https?://', clean_url):
+        elif re.match(r'https?://', clean_url):
             try:
                 response = requests.get(
                     clean_url, verify=False, timeout=URL_TIMEOUT,
@@ -59,7 +68,53 @@ class HtmlProoferPlugin(BasePlugin):
             except requests.exceptions.ConnectionError:
                 return clean_url, -1
         else:
+            match = re.match(r'(.+)#(.+)', clean_url)
+            if match is not None:
+                # URL is a link to another local Markdown file that includes an anchor.
+                url_target, anchor = match.groups()
+                target_markdown = self.find_target_markdown(url_target, files)
+                if (target_markdown is None
+                        or not self.contains_anchor(target_markdown, anchor)):
+                    # The corresponding Markdown header for this anchor was not found.
+                    return url, 404
+
             return url, 0
+
+    @staticmethod
+    def find_target_markdown(url: str, files: Files) -> Optional[str]:
+        """From a built URL, find the original Markdown source from the project that built it."""
+        # Remove first / from absolute URLs to match how MkDocs stores URLs in its Files.
+        url = url.lstrip("/")
+
+        for file in files.src_paths.values():  # type: File
+            # Using endswith() is to deal with relative URLs that do not contain the full path
+            # to the .html file. This approximation will allow a small number of anchors to be
+            # validated even if they don't exist (if the same Markdown filename is used in
+            # multiple folders), but the alternative is to try to reimplement MkDocs file/URL
+            # generation.
+            if file.url.endswith(url):
+                return file.page.markdown
+        print(f"Warning: Unable to locate Markdown source file for: {url}", file=sys.stderr)
+        return None
+
+    @staticmethod
+    def contains_anchor(markdown: str, anchor: str) -> bool:
+        """Check if a set of Markdown source text contains a heading that corresponds to a
+        given anchor."""
+        for line in markdown.splitlines():
+            # Markdown allows whitespace before headers and an arbitrary number of #'s.
+            match = re.match(rf'\s*#+\s*(.*)', line)
+            if match is not None:
+                heading = match.groups()[0]
+
+                # Headings are allowed to have images after them, of the form:
+                # # Heading [![Image][image-link]]
+                # But these images are not included in the generated anchor, so remove them.
+                heading = heading.split("[")[0].strip()
+                anchor_slug = slugify(heading, '-')
+                if anchor == anchor_slug:
+                    return True
+        return False
 
     @staticmethod
     def bad_url(url_status: int) -> bool:
