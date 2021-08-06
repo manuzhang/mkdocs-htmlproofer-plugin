@@ -34,10 +34,11 @@ class HtmlProoferPlugin(BasePlugin):
         self.files = files
 
     def on_post_page(self, output_content: str, page: Page, config: Config) -> None:
+        use_directory_urls = config.data["use_directory_urls"]
         soup = BeautifulSoup(output_content, 'html.parser')
         for a in soup.find_all('a', href=True):
             url = a['href']
-            clean_url, url_status = self.get_url_status(url, soup, self.files)
+            clean_url, url_status = self.get_url_status(url, soup, self.files, use_directory_urls)
             if self.bad_url(url_status) is True:
                 error = f'{clean_url}: {url_status}'
                 excludes = self.config['raise_error_excludes']
@@ -50,7 +51,8 @@ class HtmlProoferPlugin(BasePlugin):
                     print(error)
 
     @lru_cache(maxsize=500)
-    def get_url_status(self, url: str, soup: BeautifulSoup, files: Files) -> Tuple[str, int]:
+    def get_url_status(self, url: str, soup: BeautifulSoup, files: Files,
+                       use_directory_urls: bool) -> Tuple[str, int]:
         for local in ('localhost', '127.0.0.1', 'app_server'):
             if re.match(rf'https?://{local}', url):
                 return url, 0
@@ -69,7 +71,11 @@ class HtmlProoferPlugin(BasePlugin):
                 return clean_url, -1
         else:
             match = re.match(r'(.+)#(.+)', clean_url)
-            if match is not None:
+            # use_directory_urls = True injects too many challenges for locating the correct target
+            # Markdown file, so disable target anchor validation in this case. Examples include:
+            # ../..#BAD_ANCHOR style links to index.html and extra ../ inserted into relative
+            # links.
+            if match is not None and not use_directory_urls:
                 # URL is a link to another local Markdown file that includes an anchor.
                 url_target, anchor = match.groups()
                 target_markdown = self.find_target_markdown(url_target, files)
