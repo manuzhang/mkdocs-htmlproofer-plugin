@@ -83,8 +83,8 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def find_target_markdown(url: str, files: Files) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
-        # Remove first / from absolute URLs to match how MkDocs stores URLs in its Files.
-        url = url.lstrip("/")
+        # Remove /../ relative pathing from absolute URLs to match how MkDocs stores URLs in Files.
+        url = url.lstrip("/").lstrip("../")
 
         for file in files.src_paths.values():  # type: File
             # Using endswith() is to deal with relative URLs that do not contain the full path
