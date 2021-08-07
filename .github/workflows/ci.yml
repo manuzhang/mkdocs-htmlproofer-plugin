@@ -31,8 +31,11 @@ jobs:
         run: mypy htmlproofer
       - name: Check Import Ordering with isort
         run: isort --check .
-      - run: cd test
       - name: Test with use_directory_urls = False
-        run: mkdocs build
+        run: |
+          cd test
+          mkdocs build
       - name: Test with use_directory_urls = True
-        run: mkdocs build --use-directory-urls
+        run: |
+          cd test
+          mkdocs build --use-directory-urls
