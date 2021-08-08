@@ -49,6 +49,12 @@ plugins:
 
 > **Note:** If you have no `plugins` entry in your config file yet, you'll likely also want to add the `search` plugin. MkDocs enables it by default if there is no `plugins` entry set, but now you have to enable it explicitly.
 
+To enable cross-page anchor validation, you must set `use_directory_urls = False` in `mkdocs.yml`:
+
+```yaml
+use_directory_urls: False
+```
+
 More information about plugins in the [MkDocs documentation](http://www.mkdocs.org/user-guide/plugins/)
 
 ## Acknowledgement
