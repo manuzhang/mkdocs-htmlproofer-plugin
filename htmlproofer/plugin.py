@@ -159,7 +159,7 @@ class HtmlProoferPlugin(BasePlugin):
         elif url_status == 401 or url_status == 403:
             return False
         elif url_status in (503, 504):
-          # Usually transient
+            # Usually transient
             return False
         elif url_status == 999:
             # Returned by some websites (e.g. LinkedIn) that think you're crawling them.
