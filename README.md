@@ -68,12 +68,6 @@ plugins:
           400: ['*']
 ```
 
-## Performance
-
-[BeautifulSoup](https://beautiful-soup-4.readthedocs.io/en/latest/) is used to parse HTML as part of
-validation. When `lxml` and `cchardet` are installed in the Python environment, a faster parser will
-be used automatically.
-
 ## Improving
 
 More information about plugins in the [MkDocs documentation](http://www.mkdocs.org/user-guide/plugins/)
