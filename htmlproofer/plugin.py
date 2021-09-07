@@ -14,12 +14,6 @@ from mkdocs.structure.pages import Page
 import requests
 import urllib3
 
-try:
-    import lxml
-    LXML_AVAILABLE = True
-except ImportError:
-    LXML_AVAILABLE = False
-
 URL_TIMEOUT = 10.0
 _URL_BOT_ID = f'Bot {uuid.uuid4()}'
 URL_HEADERS = {'User-Agent': _URL_BOT_ID}
@@ -47,14 +41,11 @@ class HtmlProoferPlugin(BasePlugin):
     def on_post_page(self, output_content: str, page: Page, config: Config) -> None:
         use_directory_urls = config.data["use_directory_urls"]
 
-        # Optimization: use lxml as the parser if available
-        soup_parser = 'lxml' if LXML_AVAILABLE else 'html.parser'
-
         # Optimization: only parse links and headings
         # li, sup are used for footnotes
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup'))
 
-        soup = BeautifulSoup(output_content, soup_parser, parse_only=strainer)
+        soup = BeautifulSoup(output_content, 'lxml', parse_only=strainer)
 
         all_element_ids = set(tag['id'] for tag in soup.select('[id]'))
         for a in soup.find_all('a', href=True):

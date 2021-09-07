@@ -23,7 +23,8 @@ setup(
         'mkdocs>=0.17',
         'Markdown',
         'requests',
-        'beautifulsoup4'
+        'beautifulsoup4',
+        'lxml',
     ],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
