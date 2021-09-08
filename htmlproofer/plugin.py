@@ -22,10 +22,10 @@ EXTERNAL_URL_PATTERN = re.compile(r'https?://')
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'(.+)#(.+)')
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 HTML_LINK_PATTERN = re.compile(r'.*<a id=\"(.*)\">.*')
-LOCAL_PATTERNS = (
+LOCAL_PATTERNS = [
     re.compile(rf'https?://{local}')
     for local in ('localhost', '127.0.0.1', 'app_server')
-)
+]
 
 urllib3.disable_warnings()
 
@@ -59,7 +59,7 @@ class HtmlProoferPlugin(BasePlugin):
         soup = BeautifulSoup(output_content, 'lxml', parse_only=strainer)
 
         all_element_ids = set(tag['id'] for tag in soup.select('[id]'))
-        all_element_ids.add('#')  # Empty anchor is commonly used, but not real
+        all_element_ids.add('')  # Empty anchor is commonly used, but not real
         for a in soup.find_all('a', href=True):
             url = a['href']
 
