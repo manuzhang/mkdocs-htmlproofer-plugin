@@ -38,6 +38,17 @@ class HtmlProoferPlugin(BasePlugin):
         ('raise_error_excludes', config_options.Type(dict, default={})),
     )
 
+    def __init__(self):
+        self._session = requests.Session()
+        self._session.verify = False
+        self._session.headers.update(URL_HEADERS)
+        self._session.max_redirects = 5
+        super().__init__()
+
+    def on_page_markdown(self, markdown: str, page: Page, config: Config, files: Files) -> None:
+        # Store files to allow inspecting Markdown files in later stages.
+        self.files = files
+
     def on_post_page(self, output_content: str, page: Page, config: Config) -> None:
         use_directory_urls = config.data["use_directory_urls"]
 
@@ -48,6 +59,7 @@ class HtmlProoferPlugin(BasePlugin):
         soup = BeautifulSoup(output_content, 'lxml', parse_only=strainer)
 
         all_element_ids = set(tag['id'] for tag in soup.select('[id]'))
+        all_element_ids.add('#')  # Empty anchor is commonly used, but not real
         for a in soup.find_all('a', href=True):
             url = a['href']
 
@@ -62,20 +74,10 @@ class HtmlProoferPlugin(BasePlugin):
                 elif is_error:
                     print(error)
 
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def _session():
-        session = requests.Session()
-        session.verify = False
-        session.headers.update(URL_HEADERS)
-        session.max_redirects = 5
-        return session
-
-    @classmethod
     @lru_cache(maxsize=1000)
-    def get_external_url(cls, url: str) -> int:
+    def get_external_url(self, url: str) -> int:
         try:
-            response = cls._session().head(url, timeout=URL_TIMEOUT)
+            response = self._session.head(url, timeout=URL_TIMEOUT)
             return response.status_code
         except requests.exceptions.Timeout:
             return 504
