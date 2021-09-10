@@ -25,16 +25,37 @@ plugins:
     - htmlproofer
 ```
 
-Optionally, you may raise error and fail the build on bad url status.
+> **Note:** If you have no `plugins` entry in your config file yet, you'll likely also want to add the `search` plugin.
+MkDocs enables it by default if there is no `plugins` entry set, but now you have to enable it explicitly.
 
 ```yaml
 plugins:
     - search
+    - htmlproofer
+```
+
+To enable cross-page anchor validation, you must set `use_directory_urls = False` in `mkdocs.yml`:
+
+```yaml
+use_directory_urls: False
+```
+
+## Configuring
+
+### `raise_error`
+
+Optionally, you may raise an error and fail the build on bad url status.
+
+```yaml
+plugins:
     - htmlproofer:
         raise_error: True
 ```
 
-That can be switched off for combinations of urls (`'*'` means all urls) and status codes with `raise_error_excludes`.
+### `raise_error_excludes`
+
+When specifying `raise_error: True`, it is possible to ignore errors
+for combinations of urls (`'*'` means all urls) and status codes with `raise_error_excludes`.
 
 ```yaml
 plugins:
@@ -47,13 +68,7 @@ plugins:
           400: ['*']
 ```
 
-> **Note:** If you have no `plugins` entry in your config file yet, you'll likely also want to add the `search` plugin. MkDocs enables it by default if there is no `plugins` entry set, but now you have to enable it explicitly.
-
-To enable cross-page anchor validation, you must set `use_directory_urls = False` in `mkdocs.yml`:
-
-```yaml
-use_directory_urls: False
-```
+## Improving
 
 More information about plugins in the [MkDocs documentation](http://www.mkdocs.org/user-guide/plugins/)
 
