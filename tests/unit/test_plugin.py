@@ -36,6 +36,10 @@ def test_get_url_status__ignore_local_servers(plugin, empty_files, url):
     assert plugin.get_url_status(url, 'src/path.md', set(), empty_files, False) == 0
 
 
+def test_get_url_status__dont_validate_external(plugin):
+    assert plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files, False) == 0
+
+
 def test_get_url_status__same_page_anchor(plugin, empty_files):
     assert plugin.get_url_status('#ref', 'src/path.md', {'ref'}, empty_files, False) == 0
     assert plugin.get_url_status('##ref', 'src/path.md', {'ref'}, empty_files, False) == 404

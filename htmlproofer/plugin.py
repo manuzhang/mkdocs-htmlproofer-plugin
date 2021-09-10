@@ -38,6 +38,7 @@ class HtmlProoferPlugin(BasePlugin):
     config_scheme = (
         ('raise_error', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
+        ('validate_external_urls', config_options.Type(bool, default=True)),
     )
 
     def __init__(self):
@@ -96,6 +97,8 @@ class HtmlProoferPlugin(BasePlugin):
         if url.startswith('#'):
             return 0 if url[1:] in all_element_ids else 404
         elif EXTERNAL_URL_PATTERN.match(url):
+            if not self.config['validate_external_urls']:
+                return 0
             return self.get_external_url(url)
         elif not use_directory_urls:
             # use_directory_urls = True injects too many challenges for locating the correct target
