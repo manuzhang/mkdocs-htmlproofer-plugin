@@ -96,8 +96,6 @@ class HtmlProoferPlugin(BasePlugin):
         if url.startswith('#') and not url.lstrip('#') in all_element_ids:
             return 404
         elif EXTERNAL_URL_PATTERN.match(url):
-            if not self.config['validate_external_urls']:
-                return 0
             return self.get_external_url(url)
         elif not use_directory_urls:
             # use_directory_urls = True injects too many challenges for locating the correct target
