@@ -1,10 +1,10 @@
+from functools import lru_cache
 import os.path
 import pathlib
 import re
 import sys
-import uuid
-from functools import lru_cache
 from typing import Optional, Set, Tuple
+import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
