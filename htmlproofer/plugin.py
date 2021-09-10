@@ -1,8 +1,10 @@
-from functools import lru_cache
+import os.path
+import pathlib
 import re
 import sys
-from typing import Optional, Set, Tuple
 import uuid
+from functools import lru_cache
+from typing import Optional, Set, Tuple
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
@@ -63,10 +65,10 @@ class HtmlProoferPlugin(BasePlugin):
         for a in soup.find_all('a', href=True):
             url = a['href']
 
-            clean_url, url_status = self.get_url_status(url, all_element_ids, self.files, use_directory_urls)
+            url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
 
             if self.bad_url(url_status) is True:
-                error = f'invalid url - {clean_url} [{url_status}] [{page.file.src_path}]'
+                error = f'invalid url - {url} [{url_status}] [{page.file.src_path}]'
 
                 is_error = self.is_error(self.config, url, url_status)
                 if self.config['raise_error'] and is_error:
@@ -86,47 +88,45 @@ class HtmlProoferPlugin(BasePlugin):
         except requests.exceptions.ConnectionError:
             return -1
 
-    def get_url_status(self, url: str, all_element_ids: Set[str], files: Files,
-                       use_directory_urls: bool) -> Tuple[str, int]:
+    def get_url_status(self, url: str, src_path: str, all_element_ids: Set[str], files: Files,
+                       use_directory_urls: bool) -> int:
         if any(pat.match(url) for pat in LOCAL_PATTERNS):
-            return url, 0
-        clean_url = url.strip('?.')
+            return 0
 
         if url.startswith('#') and not url.lstrip('#') in all_element_ids:
-            return url, 404
-        elif EXTERNAL_URL_PATTERN.match(clean_url):
-            return url, self.get_external_url(clean_url)
+            return 404
+        elif EXTERNAL_URL_PATTERN.match(url):
+            if not self.config['validate_external_urls']:
+                return 0
+            return self.get_external_url(url)
         elif not use_directory_urls:
             # use_directory_urls = True injects too many challenges for locating the correct target
             # Markdown file, so disable target anchor validation in this case. Examples include:
             # ../..#BAD_ANCHOR style links to index.html and extra ../ inserted into relative
             # links.
 
-            match = MARKDOWN_ANCHOR_PATTERN.match(clean_url)
+            match = MARKDOWN_ANCHOR_PATTERN.match(url)
             if match is not None:
                 # URL is a link to another local Markdown file that includes an anchor.
                 url_target, anchor = match.groups()
-                target_markdown = self.find_target_markdown(url_target, files)
+                target_markdown = self.find_target_markdown(url_target, src_path, files)
                 if (target_markdown is None
                         or not self.contains_anchor(target_markdown, anchor)):
                     # The corresponding Markdown header for this anchor was not found.
-                    return url, 404
-        return url, 0
+                    return 404
+        return 0
 
     @staticmethod
-    def find_target_markdown(url: str, files: Files) -> Optional[str]:
+    def find_target_markdown(url: str, src_path: str, files: Files) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
-        # Remove /../ relative pathing from absolute URLs to match how MkDocs stores URLs in Files.
-        url = url.lstrip("/").lstrip("../")
 
+        # Handle relative links by concatenating the source dir with the destination path
+        # TODO: test absolute paths
+        search = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
         for file in files.src_paths.values():  # type: File
-            # Using endswith() is to deal with relative URLs that do not contain the full path
-            # to the .html file. This approximation will allow a small number of anchors to be
-            # validated even if they don't exist (if the same Markdown filename is used in
-            # multiple folders), but the alternative is to try to reimplement MkDocs file/URL
-            # generation.
-            if file.url.endswith(url):
+            if file.url == search:
                 return file.page.markdown
+
         print(f"Warning: Unable to locate Markdown source file for: {url}", file=sys.stderr)
         return None
 
