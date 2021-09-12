@@ -1,10 +1,10 @@
 from unittest.mock import Mock, patch
 
-from htmlproofer.plugin import HtmlProoferPlugin
-from mkdocs.structure.files import Files, File
+from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
-
 import pytest
+
+from htmlproofer.plugin import HtmlProoferPlugin
 
 
 @pytest.fixture
