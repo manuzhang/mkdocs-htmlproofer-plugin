@@ -93,8 +93,8 @@ class HtmlProoferPlugin(BasePlugin):
         if any(pat.match(url) for pat in LOCAL_PATTERNS):
             return 0
 
-        if url.startswith('#') and not url.lstrip('#') in all_element_ids:
-            return 404
+        if url.startswith('#'):
+            return 0 if url[1:] in all_element_ids else 404
         elif EXTERNAL_URL_PATTERN.match(url):
             return self.get_external_url(url)
         elif not use_directory_urls:
@@ -119,7 +119,6 @@ class HtmlProoferPlugin(BasePlugin):
         """From a built URL, find the original Markdown source from the project that built it."""
 
         # Handle relative links by concatenating the source dir with the destination path
-        # TODO: test absolute paths
         search = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
         for file in files.src_paths.values():  # type: File
             if file.url == search:

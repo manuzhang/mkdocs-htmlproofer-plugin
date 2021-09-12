@@ -8,3 +8,6 @@ types-Markdown
 
 # Formatting.
 isort
+
+# Testing.
+pytest
