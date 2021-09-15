@@ -42,6 +42,26 @@ use_directory_urls: False
 
 ## Configuring
 
+### `enabled`
+
+True by default, allows toggling whether the plugin is enabled.
+Useful for local development where you may want faster build times.
+
+```yaml
+# mkdocs.yml
+plugins:
+  - htmlproofer:
+      enabled: !ENV [ENABLED_HTMLPROOFER, True]
+```
+
+Which enables you do disable the plugin locally using:
+
+```bash
+export ENABLED_HTMLPROOFER=false
+mkdocs serve
+```
+
+
 ### `raise_error`
 
 Optionally, you may raise an error and fail the build on bad url status.

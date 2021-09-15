@@ -36,6 +36,7 @@ class HtmlProoferPlugin(BasePlugin):
     files: Files = None
 
     config_scheme = (
+        ("enabled", config_options.Type(bool, default=True)),
         ('raise_error', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
         ('validate_external_urls', config_options.Type(bool, default=True)),
@@ -54,6 +55,9 @@ class HtmlProoferPlugin(BasePlugin):
         self.files = files
 
     def on_post_page(self, output_content: str, page: Page, config: Config) -> None:
+        if not self.config['enabled']:
+            return
+
         use_directory_urls = config.data["use_directory_urls"]
 
         # Optimization: only parse links and headings

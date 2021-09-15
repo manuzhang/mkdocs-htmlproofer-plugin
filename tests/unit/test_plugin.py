@@ -55,6 +55,15 @@ def test_on_post_page(empty_files, mock_requests, validate_rendered_template):
         plugin.on_post_page(link_to_500 if validate_rendered_template else '', page, config)
 
 
+def test_on_post_page__plugin_disabled():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'enabled': False,
+        'raise_error': True,
+    })
+    plugin.on_post_page('<a href="https://google.com"><a/>', Mock(spec=Page), Mock(spec=Config))
+
+
 @pytest.mark.parametrize(
     'url',
     (
