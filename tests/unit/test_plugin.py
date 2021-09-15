@@ -4,8 +4,8 @@ from mkdocs.config import Config
 from mkdocs.exceptions import PluginError
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
-from requests import Response
 import pytest
+from requests import Response
 
 from htmlproofer.plugin import HtmlProoferPlugin
 
