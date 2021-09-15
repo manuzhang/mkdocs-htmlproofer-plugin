@@ -48,7 +48,6 @@ True by default, allows toggling whether the plugin is enabled.
 Useful for local development where you may want faster build times.
 
 ```yaml
-# mkdocs.yml
 plugins:
   - htmlproofer:
       enabled: !ENV [ENABLED_HTMLPROOFER, True]
@@ -68,8 +67,8 @@ Optionally, you may raise an error and fail the build on bad url status.
 
 ```yaml
 plugins:
-    - htmlproofer:
-        raise_error: True
+  - htmlproofer:
+      raise_error: True
 ```
 
 ### `raise_error_excludes`
@@ -79,13 +78,13 @@ for combinations of urls (`'*'` means all urls) and status codes with `raise_err
 
 ```yaml
 plugins:
-    - search
-    - htmlproofer:
-        raise_error: True
-        raise_error_excludes:
-          504: ['https://www.mkdocs.org/']
-          404: ['https://github.com/manuzhang/mkdocs-htmlproofer-plugin']
-          400: ['*']
+  - search
+  - htmlproofer:
+      raise_error: True
+      raise_error_excludes:
+        504: ['https://www.mkdocs.org/']
+        404: ['https://github.com/manuzhang/mkdocs-htmlproofer-plugin']
+        400: ['*']
 ```
 
 ### `validate_external_urls`
