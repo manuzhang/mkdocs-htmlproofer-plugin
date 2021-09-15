@@ -59,7 +59,7 @@ class HtmlProoferPlugin(BasePlugin):
         # li, sup are used for footnotes
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup'))
 
-        soup = BeautifulSoup(output_content, 'lxml', parse_only=strainer)
+        soup = BeautifulSoup(page.content, 'lxml', parse_only=strainer)
 
         all_element_ids = set(tag['id'] for tag in soup.select('[id]'))
         all_element_ids.add('')  # Empty anchor is commonly used, but not real
