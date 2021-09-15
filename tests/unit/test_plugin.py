@@ -9,7 +9,9 @@ from htmlproofer.plugin import HtmlProoferPlugin
 
 @pytest.fixture
 def plugin():
-    return HtmlProoferPlugin()
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({})
+    return plugin
 
 
 @pytest.fixture
@@ -36,8 +38,21 @@ def test_get_url_status__ignore_local_servers(plugin, empty_files, url):
     assert plugin.get_url_status(url, 'src/path.md', set(), empty_files, False) == 0
 
 
-def test_get_url_status__dont_validate_external(plugin):
-    assert plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files, False) == 0
+
+@pytest.mark.parametrize(
+    'validate_external', (True, False)
+)
+def test_get_url_status(validate_external: bool):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'validate_external_urls': validate_external})
+
+    get_url = lambda: plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files, False)
+
+    if validate_external:
+        with pytest.raises(Exception):
+            get_url()
+    else:
+        assert get_url() == 0
 
 
 def test_get_url_status__same_page_anchor(plugin, empty_files):
