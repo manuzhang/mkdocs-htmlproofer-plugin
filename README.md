@@ -62,10 +62,21 @@ plugins:
     - search
     - htmlproofer:
         raise_error: True
-        raise_error_excludes: 
+        raise_error_excludes:
           504: ['https://www.mkdocs.org/']
           404: ['https://github.com/manuzhang/mkdocs-htmlproofer-plugin']
           400: ['*']
+```
+
+### `validate_external_urls`
+
+Avoids validating any external URLs (i.e those starting with http:// or https://).
+This will be faster if you just want to validate local anchors, as it does not make any network requests.
+
+```
+plugins:
+  - htmlproofer:
+      validate_external_urls: False
 ```
 
 ## Improving
