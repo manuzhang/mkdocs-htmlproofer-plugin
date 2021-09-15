@@ -79,6 +79,17 @@ plugins:
       validate_external_urls: False
 ```
 
+### `validate_rendered_template`
+
+Validates the entire rendered template for each page - including the navigation, header, footer, etc.
+This defaults to off because it is much slower and often redundant to repeat for every single page.
+
+```
+plugins:
+  - htmlproofer:
+      validate_rendered_template: True
+```
+
 ## Improving
 
 More information about plugins in the [MkDocs documentation](http://www.mkdocs.org/user-guide/plugins/)

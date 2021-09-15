@@ -39,6 +39,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('raise_error', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
         ('validate_external_urls', config_options.Type(bool, default=True)),
+        ('validate_rendered_template', config_options.Type(bool, default=False)),
     )
 
     def __init__(self):
@@ -59,7 +60,8 @@ class HtmlProoferPlugin(BasePlugin):
         # li, sup are used for footnotes
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup'))
 
-        soup = BeautifulSoup(page.content, 'lxml', parse_only=strainer)
+        content = output_content if self.config['validate_rendered_template'] else page.content
+        soup = BeautifulSoup(content, 'lxml', parse_only=strainer)
 
         all_element_ids = set(tag['id'] for tag in soup.select('[id]'))
         all_element_ids.add('')  # Empty anchor is commonly used, but not real
