@@ -1,8 +1,11 @@
 from unittest.mock import Mock, patch
 
+from mkdocs.config import Config
+from mkdocs.exceptions import PluginError
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
 import pytest
+from requests import Response
 
 from htmlproofer.plugin import HtmlProoferPlugin
 
@@ -23,7 +26,42 @@ def empty_files():
 def mock_requests():
     with patch('requests.Session.head') as mock_head:
         mock_head.side_effect = Exception("don't make network requests from tests")
-        yield
+        yield mock_head
+
+
+@pytest.mark.parametrize(
+    'validate_rendered_template', (False, True)
+)
+def test_on_post_page(empty_files, mock_requests, validate_rendered_template):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'validate_rendered_template': validate_rendered_template,
+        'raise_error': True,
+    })
+
+    # Always raise a 500 error
+    mock_requests.side_effect = [Mock(spec=Response, status_code=500)]
+    link_to_500 = '<a href="https://google.com"><a/>'
+
+    plugin.files = empty_files
+    page = Mock(
+        spec=Page,
+        file=Mock(spec=File, src_path='blah.md'),
+        content='' if validate_rendered_template else link_to_500
+    )
+    config = Mock(spec=Config, data={'use_directory_urls': False})
+
+    with pytest.raises(PluginError):
+        plugin.on_post_page(link_to_500 if validate_rendered_template else '', page, config)
+
+
+def test_on_post_page__plugin_disabled():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'enabled': False,
+        'raise_error': True,
+    })
+    plugin.on_post_page('<a href="https://google.com"><a/>', Mock(spec=Page), Mock(spec=Config))
 
 
 @pytest.mark.parametrize(
@@ -36,7 +74,6 @@ def mock_requests():
 )
 def test_get_url_status__ignore_local_servers(plugin, empty_files, url):
     assert plugin.get_url_status(url, 'src/path.md', set(), empty_files, False) == 0
-
 
 
 @pytest.mark.parametrize(

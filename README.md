@@ -42,14 +42,33 @@ use_directory_urls: False
 
 ## Configuring
 
+### `enabled`
+
+True by default, allows toggling whether the plugin is enabled.
+Useful for local development where you may want faster build times.
+
+```yaml
+plugins:
+  - htmlproofer:
+      enabled: !ENV [ENABLED_HTMLPROOFER, True]
+```
+
+Which enables you do disable the plugin locally using:
+
+```bash
+export ENABLED_HTMLPROOFER=false
+mkdocs serve
+```
+
+
 ### `raise_error`
 
 Optionally, you may raise an error and fail the build on bad url status.
 
 ```yaml
 plugins:
-    - htmlproofer:
-        raise_error: True
+  - htmlproofer:
+      raise_error: True
 ```
 
 ### `raise_error_excludes`
@@ -59,13 +78,13 @@ for combinations of urls (`'*'` means all urls) and status codes with `raise_err
 
 ```yaml
 plugins:
-    - search
-    - htmlproofer:
-        raise_error: True
-        raise_error_excludes:
-          504: ['https://www.mkdocs.org/']
-          404: ['https://github.com/manuzhang/mkdocs-htmlproofer-plugin']
-          400: ['*']
+  - search
+  - htmlproofer:
+      raise_error: True
+      raise_error_excludes:
+        504: ['https://www.mkdocs.org/']
+        404: ['https://github.com/manuzhang/mkdocs-htmlproofer-plugin']
+        400: ['*']
 ```
 
 ### `validate_external_urls`
@@ -77,6 +96,17 @@ This will be faster if you just want to validate local anchors, as it does not m
 plugins:
   - htmlproofer:
       validate_external_urls: False
+```
+
+### `validate_rendered_template`
+
+Validates the entire rendered template for each page - including the navigation, header, footer, etc.
+This defaults to off because it is much slower and often redundant to repeat for every single page.
+
+```
+plugins:
+  - htmlproofer:
+      validate_rendered_template: True
 ```
 
 ## Improving
