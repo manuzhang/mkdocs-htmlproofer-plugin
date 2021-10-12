@@ -3,7 +3,7 @@ import os.path
 import pathlib
 import re
 import sys
-from typing import Optional, Set, Tuple
+from typing import Optional, Set
 import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
@@ -148,7 +148,7 @@ class HtmlProoferPlugin(BasePlugin):
                 heading = heading_match.groups()[0]
 
                 # Headings are allowed to have images after them, of the form:
-                # # Heading [![Image][image-link]]
+                # # Heading [![Image](image-link)]
                 # But these images are not included in the generated anchor, so remove them.
                 heading = re.sub(IMAGE_PATTERN, '', heading)
                 anchor_slug = slugify(heading, '-')

@@ -92,6 +92,18 @@ def test_get_url_status(validate_external: bool):
         assert get_url() == 0
 
 
+@pytest.mark.parametrize(
+    'markdown, anchor, expected', [
+        ('git status', 'git-status', False),
+        ('## git status', 'git-status', True),
+        ('## refer to this [![image](image-link)]', 'refer-to-this', True),
+        ('## git add [$changed-files]', 'git-add-changed-files', True),
+    ]
+)
+def test_contains_anchor(plugin, markdown, anchor, expected):
+    assert plugin.contains_anchor(markdown, anchor) == expected
+
+
 def test_get_url_status__same_page_anchor(plugin, empty_files):
     assert plugin.get_url_status('#ref', 'src/path.md', {'ref'}, empty_files, False) == 0
     assert plugin.get_url_status('##ref', 'src/path.md', {'ref'}, empty_files, False) == 404

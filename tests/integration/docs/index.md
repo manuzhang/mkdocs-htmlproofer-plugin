@@ -54,7 +54,7 @@ plugins:
 
 More information about plugins in the [MkDocs documentation](https://www.mkdocs.org/user-guide/plugin)
 
-## `localhost` [$URLs]
+## `localhost` URLs
 
 `localhost` URLs are safely ignored by `mkdocs-htmlproofer-plugin` and will not raise warnings:
 
