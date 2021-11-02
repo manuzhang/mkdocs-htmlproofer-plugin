@@ -3,7 +3,7 @@ import os.path
 import pathlib
 import re
 import sys
-from typing import Optional, Set, Tuple
+from typing import Optional, Set
 import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
@@ -24,6 +24,7 @@ EXTERNAL_URL_PATTERN = re.compile(r'https?://')
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'(.+)#(.+)')
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 HTML_LINK_PATTERN = re.compile(r'.*<a id=\"(.*)\">.*')
+IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 LOCAL_PATTERNS = [
     re.compile(rf'https?://{local}')
     for local in ('localhost', '127.0.0.1', 'app_server')
@@ -147,9 +148,9 @@ class HtmlProoferPlugin(BasePlugin):
                 heading = heading_match.groups()[0]
 
                 # Headings are allowed to have images after them, of the form:
-                # # Heading [![Image][image-link]]
+                # # Heading [![Image](image-link)] or ![Image][image-reference]
                 # But these images are not included in the generated anchor, so remove them.
-                heading = heading.split("[")[0].strip()
+                heading = re.sub(IMAGE_PATTERN, '', heading)
                 anchor_slug = slugify(heading, '-')
                 if anchor == anchor_slug:
                     return True
