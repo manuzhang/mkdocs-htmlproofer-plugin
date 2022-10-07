@@ -63,7 +63,7 @@ class HtmlProoferPlugin(BasePlugin):
 
         # Optimization: only parse links and headings
         # li, sup are used for footnotes
-        strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup'))
+        strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup', 'img'))
 
         content = output_content if self.config['validate_rendered_template'] else page.content
         soup = BeautifulSoup(content, 'lxml', parse_only=strainer)
