@@ -9,7 +9,7 @@ def read(fname: str):
 
 setup(
     name='mkdocs-htmlproofer-plugin',
-    version='0.9.0',
+    version='0.10.0.dev',
     description='A MkDocs plugin that validates URL in rendered HTML files',
     long_description=read('README.md'),
     long_description_content_type='text/markdown',
