@@ -34,7 +34,7 @@ urllib3.disable_warnings()
 
 
 class HtmlProoferPlugin(BasePlugin):
-    files: Files = None
+    files: Files
 
     config_scheme = (
         ("enabled", config_options.Type(bool, default=True)),
@@ -131,7 +131,7 @@ class HtmlProoferPlugin(BasePlugin):
         # Handle relative links by concatenating the source dir with the destination path
         search = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
         for file in files.src_paths.values():  # type: File
-            if file.url == search:
+            if file.url == search and file.page:
                 return file.page.markdown
 
         print(f"Warning: Unable to locate Markdown source file for: {url}", file=sys.stderr)
