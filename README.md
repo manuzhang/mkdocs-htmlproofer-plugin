@@ -92,7 +92,7 @@ plugins:
 Avoids validating any external URLs (i.e those starting with http:// or https://).
 This will be faster if you just want to validate local anchors, as it does not make any network requests.
 
-```
+```yaml
 plugins:
   - htmlproofer:
       validate_external_urls: False
@@ -103,7 +103,7 @@ plugins:
 Validates the entire rendered template for each page - including the navigation, header, footer, etc.
 This defaults to off because it is much slower and often redundant to repeat for every single page.
 
-```
+```yaml
 plugins:
   - htmlproofer:
       validate_rendered_template: True
