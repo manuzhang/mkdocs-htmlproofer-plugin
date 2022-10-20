@@ -66,7 +66,7 @@ class HtmlProoferPlugin(BasePlugin):
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup', 'img'))
 
         content = output_content if self.config['validate_rendered_template'] else page.content
-        soup = BeautifulSoup(content, 'lxml', parse_only=strainer)
+        soup = BeautifulSoup(content, 'html.parser', parse_only=strainer)
 
         all_element_ids = set(tag['id'] for tag in soup.select('[id]'))
         all_element_ids.add('')  # Empty anchor is commonly used, but not real
