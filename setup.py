@@ -24,7 +24,6 @@ setup(
         'Markdown',
         'requests',
         'beautifulsoup4',
-        'lxml',
     ],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
