@@ -24,7 +24,7 @@ def empty_files():
 
 @pytest.fixture(autouse=True)
 def mock_requests():
-    with patch('requests.Session.head') as mock_head:
+    with patch('requests.Session.get') as mock_head:
         mock_head.side_effect = Exception("don't make network requests from tests")
         yield mock_head
 
