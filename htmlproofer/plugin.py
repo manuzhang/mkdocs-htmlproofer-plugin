@@ -87,7 +87,7 @@ class HtmlProoferPlugin(BasePlugin):
     @lru_cache(maxsize=1000)
     def get_external_url(self, url: str) -> int:
         try:
-            response = self._session.head(url, timeout=URL_TIMEOUT)
+            response = self._session.get(url, timeout=URL_TIMEOUT)
             return response.status_code
         except requests.exceptions.Timeout:
             return 504
