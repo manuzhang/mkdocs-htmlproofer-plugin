@@ -73,5 +73,5 @@ This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/r
 
 ## GitHub Action
 
-![GitHub Action](https://github.com/manuzhang/mkdocs-htmlproofer-plugin/actions/workflows/ci.yml/badge.svg){ #github-action }
+![GitHub Action](https://github.com/manuzhang/mkdocs-htmlproofer-plugin/actions/workflows/ci.yml/badge.svg){: #github-action .github-action }
 [GitHub Action](#github-action)
