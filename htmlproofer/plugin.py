@@ -18,7 +18,7 @@ import urllib3
 
 URL_TIMEOUT = 10.0
 _URL_BOT_ID = f'Bot {uuid.uuid4()}'
-URL_HEADERS = {'User-Agent': _URL_BOT_ID}
+URL_HEADERS = {'User-Agent': _URL_BOT_ID, 'Accept-Language': '*'}
 
 EXTERNAL_URL_PATTERN = re.compile(r'https?://')
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'(.+)#(.+)')
