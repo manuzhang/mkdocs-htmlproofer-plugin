@@ -39,7 +39,7 @@ env.bak/
 venv.bak/
 
 # Tests
-test/site
+test/integration/site
 
 # PyCharm
 .idea
