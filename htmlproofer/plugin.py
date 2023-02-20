@@ -119,7 +119,7 @@ class HtmlProoferPlugin(BasePlugin):
 
                 filename, extension = os.path.splitext(url_target)
                 if extension == ".html":
-                    #·URL·is·a·link·to·another·local·Markdown·file·that·may·includes·an·anchor.
+                    # URL is a link to another local Markdown file that may includes an anchor.
                     target_markdown = self.find_target_markdown(filename + extension, src_path, self.files)
                     if target_markdown is None:
                         # The corresponding Markdown page was not found.
@@ -153,7 +153,6 @@ class HtmlProoferPlugin(BasePlugin):
         except KeyError:
             print(f"Warning: Unable to locate source file for: {url}", file=sys.stderr)
             return None
-
 
     @staticmethod
     def contains_anchor(markdown: str, anchor: str) -> bool:
