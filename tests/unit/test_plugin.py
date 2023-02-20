@@ -1,5 +1,4 @@
 import os.path
-
 from unittest.mock import Mock, patch
 
 from mkdocs.config import Config
