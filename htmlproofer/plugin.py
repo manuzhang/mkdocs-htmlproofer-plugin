@@ -117,12 +117,9 @@ class HtmlProoferPlugin(BasePlugin):
             if match is not None:
                 url_target, _, optional_anchor = match.groups()
 
-                filename, extension = os.path.splitext(url)
-                if not extension or extension == ".html":
+                filename, extension = os.path.splitext(url_target)
+                if extension == ".html":
                     #·URL·is·a·link·to·another·local·Markdown·file·that·may·includes·an·anchor.
-                    # Set extension for convenience (extensions are normally optional in URLs)
-                    extension = ".html"
-                    target_markdown = self.find_target_markdown(filename + extension, src_path, files)
                     target_markdown = self.find_target_markdown(filename + extension, src_path, self.files)
                     if target_markdown is None:
                         # The corresponding Markdown page was not found.
