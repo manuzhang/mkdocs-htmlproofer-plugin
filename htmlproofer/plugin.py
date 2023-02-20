@@ -34,7 +34,7 @@ urllib3.disable_warnings()
 
 
 class HtmlProoferPlugin(BasePlugin):
-    files: Dict[str, Files]
+    files: Dict[str, File]
 
     config_scheme = (
         ("enabled", config_options.Type(bool, default=True)),
