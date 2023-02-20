@@ -3,7 +3,7 @@ import os.path
 import pathlib
 import re
 import sys
-from typing import Optional, Set, Dict
+from typing import Dict, Optional, Set
 import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
