@@ -112,24 +112,31 @@ class HtmlProoferPlugin(BasePlugin):
             # Markdown file, so disable target anchor validation in this case. Examples include:
             # ../..#BAD_ANCHOR style links to index.html and extra ../ inserted into relative
             # links.
-
-            match = MARKDOWN_ANCHOR_PATTERN.match(url)
-            if match is not None:
-                url_target, _, optional_anchor = match.groups()
-
-                filename, extension = os.path.splitext(url_target)
-                if extension == ".html":
-                    # URL is a link to another local Markdown file that may includes an anchor.
-                    target_markdown = self.find_target_markdown(filename + extension, src_path, self.files)
-                    if target_markdown is None:
-                        # The corresponding Markdown page was not found.
-                        return 404
-                    if optional_anchor and not self.contains_anchor(target_markdown, optional_anchor):
-                        # The corresponding Markdown header for this anchor was not found.
-                        return 404
-                elif self.find_source_file(url_target, src_path, self.files) is None:
-                    return 404
+            if not self.is_url_target_valid(url, src_path, self.files):
+                return 404
         return 0
+
+    @staticmethod
+    def is_url_target_valid(url: str, src_path: str, files: Dict[str, File]) -> bool:
+        match = MARKDOWN_ANCHOR_PATTERN.match(url)
+        if match is None:
+            return True
+
+        url_target, _, optional_anchor = match.groups()
+        _, extension = os.path.splitext(url_target)
+        if extension == ".html":
+            # URL is a link to another local Markdown file that may includes an anchor.
+            target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, src_path, files)
+            if target_markdown is None:
+                # The corresponding Markdown page was not found.
+                return False
+            if optional_anchor and not HtmlProoferPlugin.contains_anchor(target_markdown, optional_anchor):
+                # The corresponding Markdown header for this anchor was not found.
+                return False
+        elif HtmlProoferPlugin.find_source_file(url_target, src_path, files) is None:
+            return False
+
+        return True
 
     @staticmethod
     def find_target_markdown(url: str, src_path: str, files: Dict[str, File]) -> Optional[str]:
