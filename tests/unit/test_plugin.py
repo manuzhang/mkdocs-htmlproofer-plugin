@@ -149,6 +149,18 @@ def test_get_url_status__local_page(plugin):
     assert plugin.get_url_status('page2.html#heading', 'page1.md', set(), files, False) == 404
 
 
+def test_get_url_status__non_markdown_page(plugin):
+    index_page = Mock(spec=Page, markdown='# Heading\nContent')
+    page1_page = Mock(spec=Page, markdown='# Page One\n## Sub Heading\nContent')
+    files = {os.path.normpath(file.url): file for file in Files([
+        Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
+        Mock(spec=File, src_path='drawing.svg', dest_path='drawing.svg', url='drawing.svg', page=None),
+    ])}
+
+    assert plugin.get_url_status('drawing.svg', 'index.md', set(), files, False) == 0
+    assert plugin.get_url_status('not-existing.svg', 'index.md', set(), files, False) == 404
+
+
 def test_get_url_status__local_page_nested(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
     nested1_page = Mock(spec=Page, markdown='# Nested\n## Nested One\nContent')
