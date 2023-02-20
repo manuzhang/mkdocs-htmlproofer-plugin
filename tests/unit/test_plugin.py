@@ -135,12 +135,15 @@ def test_get_url_status__local_page(plugin):
         Mock(spec=File, src_path='page1.md', dest_path='page1.html', url='page1.html', page=page1_page),
     ])
 
+    assert plugin.get_url_status('index.html', 'page1.md', set(), files, False) == 0
     assert plugin.get_url_status('index.html#heading', 'page1.md', set(), files, False) == 0
     assert plugin.get_url_status('index.html#bad-heading', 'page1.md', set(), files, False) == 404
 
+    assert plugin.get_url_status('page1.html', 'page1.md', set(), files, False) == 0
     assert plugin.get_url_status('page1.html#sub-heading', 'page1.md', set(), files, False) == 0
     assert plugin.get_url_status('page1.html#heading', 'page1.md', set(), files, False) == 404
 
+    assert plugin.get_url_status('page2.html', 'page1.md', set(), files, False) == 404
     assert plugin.get_url_status('page2.html#heading', 'page1.md', set(), files, False) == 404
 
 
