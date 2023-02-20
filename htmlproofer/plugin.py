@@ -3,7 +3,7 @@ import os.path
 import pathlib
 import re
 import sys
-from typing import Optional, Set
+from typing import Optional, Set, Dict
 import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
@@ -34,7 +34,7 @@ urllib3.disable_warnings()
 
 
 class HtmlProoferPlugin(BasePlugin):
-    files: Files
+    files: Dict[str, Files]
 
     config_scheme = (
         ("enabled", config_options.Type(bool, default=True)),
@@ -49,11 +49,12 @@ class HtmlProoferPlugin(BasePlugin):
         self._session.verify = False
         self._session.headers.update(URL_HEADERS)
         self._session.max_redirects = 5
+        self.files = {}
         super().__init__()
 
     def on_page_markdown(self, markdown: str, page: Page, config: Config, files: Files) -> None:
         # Store files to allow inspecting Markdown files in later stages.
-        self.files = files
+        self.files.update({os.path.normpath(file.url): file for file in files})
 
     def on_post_page(self, output_content: str, page: Page, config: Config) -> None:
         if not self.config['enabled']:
@@ -73,7 +74,7 @@ class HtmlProoferPlugin(BasePlugin):
         for a in soup.find_all('a', href=True):
             url = a['href']
 
-            url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
+            url_status = self.get_url_status(url, page.file.src_path, all_element_ids, use_directory_urls)
 
             if self.bad_url(url_status) is True:
                 error = f'invalid url - {url} [{url_status}] [{page.file.src_path}]'
@@ -96,8 +97,7 @@ class HtmlProoferPlugin(BasePlugin):
         except requests.exceptions.ConnectionError:
             return -1
 
-    def get_url_status(self, url: str, src_path: str, all_element_ids: Set[str], files: Files,
-                       use_directory_urls: bool) -> int:
+    def get_url_status(self, url: str, src_path: str, all_element_ids: Set[str], use_directory_urls: bool) -> int:
         if any(pat.match(url) for pat in LOCAL_PATTERNS):
             return 0
 
@@ -123,18 +123,19 @@ class HtmlProoferPlugin(BasePlugin):
                     # Set extension for convenience (extensions are normally optional in URLs)
                     extension = ".html"
                     target_markdown = self.find_target_markdown(filename + extension, src_path, files)
+                    target_markdown = self.find_target_markdown(filename + extension, src_path, self.files)
                     if target_markdown is None:
                         # The corresponding Markdown page was not found.
                         return 404
                     if optional_anchor and not self.contains_anchor(target_markdown, optional_anchor):
                         # The corresponding Markdown header for this anchor was not found.
                         return 404
-                elif self.find_source_file(url_target, src_path, files) is None:
+                elif self.find_source_file(url_target, src_path, self.files) is None:
                     return 404
         return 0
 
     @staticmethod
-    def find_target_markdown(url: str, src_path: str, files: Files) -> Optional[str]:
+    def find_target_markdown(url: str, src_path: str, files: Dict[str, File]) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
 
         # Handle relative links by concatenating the source dir with the destination path
@@ -144,18 +145,18 @@ class HtmlProoferPlugin(BasePlugin):
         return None
 
     @staticmethod
-    def find_source_file(url: str, src_path: str, files: Files) -> Optional[File]:
+    def find_source_file(url: str, src_path: str, files: Dict[str, File]) -> Optional[File]:
         """From a built URL, find the original file from the project that built it."""
 
         # Handle relative links by concatenating the source dir with the destination path
         search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
 
-        for file in files.src_paths.values():  # type: File
-            if os.path.normpath(file.url) == search_path:
-                return file
+        try:
+            return files[search_path]
+        except KeyError:
+            print(f"Warning: Unable to locate source file for: {url}", file=sys.stderr)
+            return None
 
-        print(f"Warning: Unable to locate source file for: {url}", file=sys.stderr)
-        return None
 
     @staticmethod
     def contains_anchor(markdown: str, anchor: str) -> bool:
