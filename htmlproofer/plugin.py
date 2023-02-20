@@ -129,9 +129,9 @@ class HtmlProoferPlugin(BasePlugin):
         """From a built URL, find the original Markdown source from the project that built it."""
 
         # Handle relative links by concatenating the source dir with the destination path
-        search = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
+        search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
         for file in files.src_paths.values():  # type: File
-            if file.url == search and file.page:
+            if os.path.normpath(file.url) == search_path and file.page:
                 return file.page.markdown
 
         print(f"Warning: Unable to locate Markdown source file for: {url}", file=sys.stderr)
