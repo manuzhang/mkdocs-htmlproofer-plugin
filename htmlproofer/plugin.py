@@ -115,14 +115,21 @@ class HtmlProoferPlugin(BasePlugin):
 
             match = MARKDOWN_ANCHOR_PATTERN.match(url)
             if match is not None:
-                # URL is a link to another local Markdown file that may includes an anchor.
-                url_target, _, anchor = match.groups()
-                target_markdown = self.find_target_markdown(url_target, src_path, files)
-                if target_markdown is None:
-                    # The corresponding Markdown page was not found.
-                    return 404
-                if anchor and not self.contains_anchor(target_markdown, anchor):
-                    # The corresponding Markdown header for this anchor was not found.
+                url_target, _, optional_anchor = match.groups()
+
+                filename, extension = os.path.splitext(url)
+                if not extension or extension == ".html":
+                    #·URL·is·a·link·to·another·local·Markdown·file·that·may·includes·an·anchor.
+                    # Set extension for convenience (extensions are normally optional in URLs)
+                    extension = ".html"
+                    target_markdown = self.find_target_markdown(filename + extension, src_path, files)
+                    if target_markdown is None:
+                        # The corresponding Markdown page was not found.
+                        return 404
+                    if optional_anchor and not self.contains_anchor(target_markdown, optional_anchor):
+                        # The corresponding Markdown header for this anchor was not found.
+                        return 404
+                elif self.find_source_file(url_target, src_path, files) is None:
                     return 404
         return 0
 
@@ -130,21 +137,24 @@ class HtmlProoferPlugin(BasePlugin):
     def find_target_markdown(url: str, src_path: str, files: Files) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
 
-        filename, extension = os.path.splitext(url)
-        if extension and extension != ".html":
-            print(f"Warning: Not implemented yet: {url}", file=sys.stderr)
-            return None
+        # Handle relative links by concatenating the source dir with the destination path
+        file = HtmlProoferPlugin.find_source_file(url, src_path, files)
+        if file and file.page:
+            return file.page.markdown
+        return None
 
-        # Set extension for convenience (extensions are normally optional in URLs)
-        extension = ".html"
+    @staticmethod
+    def find_source_file(url: str, src_path: str, files: Files) -> Optional[File]:
+        """From a built URL, find the original file from the project that built it."""
 
         # Handle relative links by concatenating the source dir with the destination path
-        search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(filename + extension)))
-        for file in files.src_paths.values():  # type: File
-            if os.path.normpath(file.url) == search_path and file.page:
-                return file.page.markdown
+        search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
 
-        print(f"Warning: Unable to locate Markdown source file for: {url}", file=sys.stderr)
+        for file in files.src_paths.values():  # type: File
+            if os.path.normpath(file.url) == search_path:
+                return file
+
+        print(f"Warning: Unable to locate source file for: {url}", file=sys.stderr)
         return None
 
     @staticmethod
