@@ -142,7 +142,6 @@ class HtmlProoferPlugin(BasePlugin):
     def find_target_markdown(url: str, src_path: str, files: Dict[str, File]) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
 
-        # Handle relative links by concatenating the source dir with the destination path
         file = HtmlProoferPlugin.find_source_file(url, src_path, files)
         if file and file.page:
             return file.page.markdown
