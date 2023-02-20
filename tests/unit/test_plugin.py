@@ -1,3 +1,5 @@
+import os.path
+
 from unittest.mock import Mock, patch
 
 from mkdocs.config import Config
@@ -19,7 +21,7 @@ def plugin():
 
 @pytest.fixture
 def empty_files():
-    return Files([])
+    return {}
 
 
 @pytest.fixture(autouse=True)
@@ -130,10 +132,10 @@ def test_get_url_status__external(plugin, empty_files, url):
 def test_get_url_status__local_page(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
     page1_page = Mock(spec=Page, markdown='# Page One\n## Sub Heading\nContent')
-    files = Files([
+    files = {os.path.normpath(file.url): file for file in Files([
         Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
         Mock(spec=File, src_path='page1.md', dest_path='page1.html', url='page1.html', page=page1_page),
-    ])
+    ])}
 
     assert plugin.get_url_status('index.html', 'page1.md', set(), files, False) == 0
     assert plugin.get_url_status('index.html#heading', 'page1.md', set(), files, False) == 0
@@ -153,13 +155,13 @@ def test_get_url_status__local_page_nested(plugin):
     nested1_sibling_page = Mock(spec=Page, markdown='# Nested Sibling')
     nested2_page = Mock(spec=Page, markdown='# Nested\n## Nested Two\nContent')
     nested2_sibling_page = Mock(spec=Page, markdown='# Nested Sibling')
-    files = Files([
+    files = {os.path.normpath(file.url): file for file in Files([
         Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
         Mock(spec=File, src_path='foo/bar/nested.md', dest_path='foo/bar/nested.html', url='foo/bar/nested.html', page=nested1_page),
         Mock(spec=File, src_path='foo/bar/sibling.md', dest_path='foo/bar/sibling.html', url='foo/bar/sibling.html', page=nested1_sibling_page),
         Mock(spec=File, src_path='foo/baz/nested.md', dest_path='foo/baz/nested.html', url='foo/baz/nested.html', page=nested2_page),
         Mock(spec=File, src_path='foo/baz/sibling.md', dest_path='foo/baz/sibling.html', url='foo/baz/sibling.html', page=nested2_sibling_page),
-    ])
+    ])}
 
     assert plugin.get_url_status('nested.html#nested-one', 'foo/bar/sibling.md', set(), files, False) == 0
     assert plugin.get_url_status('nested.html#nested-two', 'foo/bar/sibling.md', set(), files, False) == 404
