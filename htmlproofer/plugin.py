@@ -21,7 +21,7 @@ _URL_BOT_ID = f'Bot {uuid.uuid4()}'
 URL_HEADERS = {'User-Agent': _URL_BOT_ID, 'Accept-Language': '*'}
 
 EXTERNAL_URL_PATTERN = re.compile(r'https?://')
-MARKDOWN_ANCHOR_PATTERN = re.compile(r'(.+)#(.+)')
+MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 HTML_LINK_PATTERN = re.compile(r'.*<a id=\"(.*)\">.*')
 IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
@@ -115,11 +115,13 @@ class HtmlProoferPlugin(BasePlugin):
 
             match = MARKDOWN_ANCHOR_PATTERN.match(url)
             if match is not None:
-                # URL is a link to another local Markdown file that includes an anchor.
-                url_target, anchor = match.groups()
+                # URL is a link to another local Markdown file that may includes an anchor.
+                url_target, _, anchor = match.groups()
                 target_markdown = self.find_target_markdown(url_target, src_path, files)
-                if (target_markdown is None
-                        or not self.contains_anchor(target_markdown, anchor)):
+                if target_markdown is None:
+                    # The corresponding Markdown page was not found.
+                    return 404
+                if anchor and not self.contains_anchor(target_markdown, anchor):
                     # The corresponding Markdown header for this anchor was not found.
                     return 404
         return 0
@@ -128,8 +130,16 @@ class HtmlProoferPlugin(BasePlugin):
     def find_target_markdown(url: str, src_path: str, files: Files) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
 
+        filename, extension = os.path.splitext(url)
+        if extension and extension != ".html":
+            print(f"Warning: Not implemented yet: {url}", file=sys.stderr)
+            return None
+
+        # Set extension for convenience (extensions are normally optional in URLs)
+        extension = ".html"
+
         # Handle relative links by concatenating the source dir with the destination path
-        search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
+        search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(filename + extension)))
         for file in files.src_paths.values():  # type: File
             if os.path.normpath(file.url) == search_path and file.page:
                 return file.page.markdown
