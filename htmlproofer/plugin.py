@@ -35,10 +35,12 @@ urllib3.disable_warnings()
 
 class HtmlProoferPlugin(BasePlugin):
     files: Dict[str, File]
+    invalid_links = False
 
     config_scheme = (
         ("enabled", config_options.Type(bool, default=True)),
         ('raise_error', config_options.Type(bool, default=False)),
+        ('raise_error_after_finish', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
@@ -51,6 +53,10 @@ class HtmlProoferPlugin(BasePlugin):
         self._session.max_redirects = 5
         self.files = {}
         super().__init__()
+
+    def on_post_build(self, config: Config)-> None:
+        if self.config['raise_error_after_finish'] and self.invalid_links:
+            raise PluginError("Invalid links present.")
 
     def on_page_markdown(self, markdown: str, page: Page, config: Config, files: Files) -> None:
         # Store files to allow inspecting Markdown files in later stages.
@@ -82,7 +88,9 @@ class HtmlProoferPlugin(BasePlugin):
                 is_error = self.is_error(self.config, url, url_status)
                 if self.config['raise_error'] and is_error:
                     raise PluginError(error)
-                elif is_error:
+                elif self.config['raise_error_after_finish'] and is_error and not self.invalid_links:
+                    self.invalid_links = True
+                if is_error:
                     print(error)
 
     @lru_cache(maxsize=1000)
