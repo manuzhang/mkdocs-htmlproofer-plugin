@@ -85,7 +85,7 @@ def test_on_post_page(empty_files, mock_requests, validate_rendered_template, ra
             plugin.on_post_page(link_to_500 if validate_rendered_template else '', page, config)
     else:
         plugin.on_post_page(link_to_500 if validate_rendered_template else '', page, config)
-        plugin.invalid_links = raise_error_after_finish_template
+        assert plugin.invalid_links == raise_error_after_finish_template
 
 
 def test_on_post_page__plugin_disabled():
