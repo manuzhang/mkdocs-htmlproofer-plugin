@@ -57,7 +57,7 @@ mkdocs serve
 
 ### `raise_error`
 
-Optionally, you may raise an error and fail the build on first bad url status.
+Optionally, you may raise an error and fail the build on first bad url status. Takes precedense over `raise_error_after_finish`.
 
 ```yaml
 plugins:
