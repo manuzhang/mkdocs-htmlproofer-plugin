@@ -57,7 +57,7 @@ mkdocs serve
 
 ### `raise_error`
 
-Optionally, you may raise an error and fail the build on bad url status.
+Optionally, you may raise an error and fail the build on first bad url status. Takes precedense over `raise_error_after_finish`.
 
 ```yaml
 plugins:
@@ -65,9 +65,19 @@ plugins:
       raise_error: True
 ```
 
+### `raise_error_after_finish`
+
+Optionally, you may want to raise an error and fail the build on at least one bad url status after all links have been checked.
+
+```yaml
+plugins:
+  - htmlproofer:
+      raise_error_after_finish: True
+```
+
 ### `raise_error_excludes`
 
-When specifying `raise_error: True`, it is possible to ignore errors
+When specifying `raise_error: True` or `raise_error_after_finish: True`, it is possible to ignore errors
 for combinations of urls (`'*'` means all urls) and status codes with `raise_error_excludes`.
 
 ```yaml

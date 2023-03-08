@@ -29,15 +29,43 @@ def mock_requests():
         mock_head.side_effect = Exception("don't make network requests from tests")
         yield mock_head
 
+@pytest.mark.parametrize(
+    'raise_error_after_finish_template', (False, True)
+)
+@pytest.mark.parametrize(
+    'invalid_links_template', (False, True)
+)
+def test_on_post_build(raise_error_after_finish_template, invalid_links_template):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'raise_error_after_finish': raise_error_after_finish_template,
+    })
+
+    plugin.invalid_links = invalid_links_template
+    config = Mock(spec=Config)
+
+    if invalid_links_template and raise_error_after_finish_template:
+        with pytest.raises(PluginError):
+            plugin.on_post_build(config)
+    else:
+        plugin.on_post_build(config)
+
 
 @pytest.mark.parametrize(
     'validate_rendered_template', (False, True)
 )
-def test_on_post_page(empty_files, mock_requests, validate_rendered_template):
+@pytest.mark.parametrize(
+    'raise_error_template', (False, True)
+)
+@pytest.mark.parametrize(
+    'raise_error_after_finish_template', (False, True)
+)
+def test_on_post_page(empty_files, mock_requests, validate_rendered_template, raise_error_template, raise_error_after_finish_template):
     plugin = HtmlProoferPlugin()
     plugin.load_config({
         'validate_rendered_template': validate_rendered_template,
-        'raise_error': True,
+        'raise_error': raise_error_template,
+        'raise_error_after_finish':raise_error_after_finish_template,
     })
 
     # Always raise a 500 error
@@ -52,8 +80,12 @@ def test_on_post_page(empty_files, mock_requests, validate_rendered_template):
     )
     config = Mock(spec=Config, data={'use_directory_urls': False})
 
-    with pytest.raises(PluginError):
+    if raise_error_template:
+        with pytest.raises(PluginError):
+            plugin.on_post_page(link_to_500 if validate_rendered_template else '', page, config)
+    else:
         plugin.on_post_page(link_to_500 if validate_rendered_template else '', page, config)
+        assert plugin.invalid_links == raise_error_after_finish_template
 
 
 def test_on_post_page__plugin_disabled():
