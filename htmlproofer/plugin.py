@@ -181,7 +181,7 @@ class HtmlProoferPlugin(BasePlugin):
             if heading_match is not None:
                 heading = heading_match.groups()[0]
 
-                # Headings are allowed to have attrlists after them, of the form:
+                # Headings are allowed to have attr_list after them, of the form:
                 # # Heading { #testanchor .testclass }
                 # # Heading {: #testanchor .testclass }
                 # # Heading {.testclass #testanchor}

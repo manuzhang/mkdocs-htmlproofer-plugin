@@ -133,7 +133,7 @@ def test_get_url_status(validate_external: bool):
         ('## git add [$changed-files]', 'git-add-changed-files', True),
         ('''## Delete ![][delete_icon]
 [delete_icon]: ./delete.svg''', 'delete', True),
-        # attrlist extension tests
+        # attr_list extension tests
         (r'## Heading {.customclass}', 'heading', True),
         (r'## Heading {#customanchor}', 'customanchor', True),
         (r'## Heading {: #customanchor}', 'customanchor', True),

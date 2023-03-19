@@ -113,9 +113,9 @@ plugins:
       validate_rendered_template: True
 ```
 
-## Compatibility with `attrlist` extension
+## Compatibility with `attr_list` extension
 
-If you need to manually specify anchors make use of the `attrlist` extension in the markdown. 
+If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown. 
 This can be useful for multilingual documentation to keep anchors as language neutral permalinks in all languages.
 
 * A sample for a heading `# Grüße {#greetings}` (the slugified generated anchor `Gre` is overwritten with `greetings`).
