@@ -160,8 +160,12 @@ class HtmlProoferPlugin(BasePlugin):
     def find_source_file(url: str, src_path: str, files: Dict[str, File]) -> Optional[File]:
         """From a built URL, find the original file from the project that built it."""
 
-        # Handle relative links by concatenating the source dir with the destination path
-        search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
+        if len(url) > 1 and url[0] == '/':
+            # Convert root/site paths
+            search_path = os.path.normpath(url[1:])
+        else:
+            # Handle relative links by concatenating the source dir with the destination path
+            search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
 
         try:
             return files[search_path]
