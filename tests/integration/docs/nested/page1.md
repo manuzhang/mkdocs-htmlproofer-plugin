@@ -23,3 +23,9 @@ or to a nested page
 But allows valid anchors such as
 [Main Page](../index.md#mkdocs-htmlproofer-plugin) and
 [Table of Contents](../index.md#table-of-contents).
+
+## Image Link absolute/relative
+
+<a href="../assets/hello-world.drawio.svg">![test](../assets/hello-world.drawio.svg)</a>
+
+<a href="/assets/hello-world.drawio.svg">![test](/assets/hello-world.drawio.svg)</a>
