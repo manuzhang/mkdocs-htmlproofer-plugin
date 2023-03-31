@@ -6,7 +6,7 @@ markdown_extensions:
   - attr_list
 plugins:
     - htmlproofer:
-        raise_error: True
+        raise_error_after_finish: True
         raise_error_excludes:
           504: ['*']
           404: ['https://www.mkdocs.org/user-guide/plugin',

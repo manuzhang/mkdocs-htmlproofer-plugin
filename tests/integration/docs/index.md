@@ -75,3 +75,9 @@ This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/r
 
 ![GitHub Action](https://github.com/manuzhang/mkdocs-htmlproofer-plugin/actions/workflows/ci.yml/badge.svg){ #github-action }
 [GitHub Action](#github-action)
+
+## Image Link absolute/relative
+
+<a href="assets/hello-world.drawio.svg">![test](assets/hello-world.drawio.svg)</a>
+
+<a href="/assets/hello-world.drawio.svg">![test](/assets/hello-world.drawio.svg)</a>

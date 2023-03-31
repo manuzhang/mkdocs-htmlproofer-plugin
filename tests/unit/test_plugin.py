@@ -200,6 +200,7 @@ def test_get_url_status__non_markdown_page(plugin):
     ])}
 
     assert plugin.get_url_status('drawing.svg', 'index.md', set(), files, False) == 0
+    assert plugin.get_url_status('/drawing.svg', 'index.md', set(), files, False) == 0
     assert plugin.get_url_status('not-existing.svg', 'index.md', set(), files, False) == 404
 
 
@@ -225,3 +226,5 @@ def test_get_url_status__local_page_nested(plugin):
 
     assert plugin.get_url_status('foo/bar/nested.html#nested-one', 'index.md', set(), files, False) == 0
     assert plugin.get_url_status('foo/baz/nested.html#nested-two', 'index.md', set(), files, False) == 0
+
+    assert plugin.get_url_status('/index.html', 'foo/baz/sibling.md', set(), files, False) == 0
