@@ -133,11 +133,22 @@ def test_get_url_status(validate_external: bool):
         ('## git add [$changed-files]', 'git-add-changed-files', True),
         ('''## Delete ![][delete_icon]
 [delete_icon]: ./delete.svg''', 'delete', True),
+        # attr_list extension tests
+        (r'## Heading {.customclass}', 'heading', True),
+        (r'## Heading {#customanchor}', 'customanchor', True),
+        (r'## Heading {: #customanchor}', 'customanchor', True),
+        (r'## Heading {.customclass #customanchor}', 'customanchor', True),
+        (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
+        (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this-imageimage-link', True), # test faulty image in heading syntax
+        (r'## refer to this [![image](image-link){#imageanchorheading}]', 'imageanchorheading', True),
+        (r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}', 'imageanchor1', True),
+        (r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}', 'imageanchor2', True),
+        (r'paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
+        (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
     ]
 )
 def test_contains_anchor(plugin, markdown, anchor, expected):
     assert plugin.contains_anchor(markdown, anchor) == expected
-
 
 def test_get_url_status__same_page_anchor(plugin, empty_files):
     assert plugin.get_url_status('#ref', 'src/path.md', {'ref'}, empty_files, False) == 0

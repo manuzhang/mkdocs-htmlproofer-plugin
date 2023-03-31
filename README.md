@@ -113,6 +113,19 @@ plugins:
       validate_rendered_template: True
 ```
 
+## Compatibility with `attr_list` extension
+
+If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown. 
+This can be useful for multilingual documentation to keep anchors as language neutral permalinks in all languages.
+
+* A sample for a heading `# Grüße {#greetings}` (the slugified generated anchor `Gre` is overwritten with `greetings`).
+* This also works for images `this is a nice image [](foo-bar.png){#nice-image}` 
+* And generall for paragraphs:
+```markdown
+Listing: This is noteworthy.
+{#paragraphanchor}
+```
+
 ## Improving
 
 More information about plugins in the [MkDocs documentation](http://www.mkdocs.org/user-guide/plugins/)

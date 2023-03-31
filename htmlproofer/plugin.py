@@ -29,6 +29,8 @@ LOCAL_PATTERNS = [
     re.compile(rf'https?://{local}')
     for local in ('localhost', '127.0.0.1', 'app_server')
 ]
+ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
+ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
 
 urllib3.disable_warnings()
 
@@ -179,10 +181,25 @@ class HtmlProoferPlugin(BasePlugin):
             if heading_match is not None:
                 heading = heading_match.groups()[0]
 
+                # Headings are allowed to have attr_list after them, of the form:
+                # # Heading { #testanchor .testclass }
+                # # Heading {: #testanchor .testclass }
+                # # Heading {.testclass #testanchor}
+                # # Heading {.testclass}
+                # these can override the headings anchor id, or alternativly just provide additional class etc.
+                attr_list_anchor_match = ATTRLIST_ANCHOR_PATTERN.match(heading)
+                if attr_list_anchor_match is not None:
+                    attr_list_anchor = heading_match.groups()[1]
+                    if anchor == attr_list_anchor:
+                        return True
+
+                heading = re.sub(ATTRLIST_PATTERN, '', heading) # remove any attribute list from heading, before slugify
+
                 # Headings are allowed to have images after them, of the form:
                 # # Heading [![Image](image-link)] or ![Image][image-reference]
                 # But these images are not included in the generated anchor, so remove them.
                 heading = re.sub(IMAGE_PATTERN, '', heading)
+
                 anchor_slug = slugify(heading, '-')
                 if anchor == anchor_slug:
                     return True
@@ -190,6 +207,12 @@ class HtmlProoferPlugin(BasePlugin):
             link_match = HTML_LINK_PATTERN.match(line)
             if link_match is not None and link_match.group(1) == anchor:
                 return True
+
+            # Any attribute list at end of paragraphs or after images can also generate an anchor (in addition to the heading ones)
+            # so gather those and check as well (multiple could be a line so gather all)
+            for attr_list_anchor in re.findall(ATTRLIST_ANCHOR_PATTERN, line):
+                if anchor == attr_list_anchor:
+                    return True
 
         return False
 
