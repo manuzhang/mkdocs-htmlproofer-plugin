@@ -1,6 +1,7 @@
 import os.path
 from unittest.mock import Mock, patch
 
+import mkdocs.utils
 from mkdocs.config import Config
 from mkdocs.exceptions import PluginError
 from mkdocs.structure.files import File, Files
@@ -177,6 +178,42 @@ def test_get_url_status__external(plugin, empty_files, url):
         status = plugin.get_url_status(url, src_path, set(), empty_files, False)
 
     mock_get_ext_url.assert_called_once_with(url, scheme, src_path)
+    assert status == expected_status
+
+
+@pytest.mark.parametrize("scheme", ('http', 'https'))
+def test_get_external_url__web_scheme(scheme):
+    src_path = 'src/path.md'
+    url = scheme + "://path.html"
+    expected_status = 200
+
+    with patch.object(HtmlProoferPlugin, "resolve_web_scheme") as mock_resolve_web_scheme:
+        mock_resolve_web_scheme.return_value = expected_status
+        plugin = HtmlProoferPlugin()
+        plugin.load_config({})
+
+        status = plugin.get_external_url(url, scheme, src_path)
+
+    mock_resolve_web_scheme.assert_called_once_with(plugin ,url)
+    assert status == expected_status
+
+
+@pytest.mark.parametrize("scheme", ('mailto', 'file', 'steam', 'abc'))
+def test_get_external_url__unknown_scheme(scheme):
+    src_path = 'src/path.md'
+    url = scheme + "://path.html"
+    expected_status = 0
+
+    with patch.object(HtmlProoferPlugin, "resolve_web_scheme") as mock_resolve_web_scheme:
+        mock_resolve_web_scheme.return_value = expected_status
+        plugin = HtmlProoferPlugin()
+        plugin.load_config({})
+
+        with patch.object(mkdocs.utils.log, "info") as mock_log_info:
+            status = plugin.get_external_url(url, scheme, src_path)
+
+    mock_log_info.assert_called_once()
+    mock_resolve_web_scheme.assert_not_called()
     assert status == expected_status
 
 
