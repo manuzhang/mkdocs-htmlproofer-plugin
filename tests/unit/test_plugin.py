@@ -203,7 +203,7 @@ def test_get_url_status__external(plugin, empty_files, url):
 @pytest.mark.parametrize("scheme", ('http', 'https'))
 def test_get_external_url__web_scheme(scheme):
     src_path = 'src/path.md'
-    url = scheme + "://path.html"
+    url = f"{scheme}://path.html"
     expected_status = 200
 
     with patch.object(HtmlProoferPlugin, "resolve_web_scheme") as mock_resolve_web_scheme:
@@ -220,7 +220,7 @@ def test_get_external_url__web_scheme(scheme):
 @pytest.mark.parametrize("scheme", ('mailto', 'file', 'steam', 'abc'))
 def test_get_external_url__unknown_scheme(scheme):
     src_path = 'src/path.md'
-    url = scheme + "://path.html"
+    url = f"{scheme}://path.html"
     expected_status = 0
 
     with patch.object(HtmlProoferPlugin, "resolve_web_scheme") as mock_resolve_web_scheme:
