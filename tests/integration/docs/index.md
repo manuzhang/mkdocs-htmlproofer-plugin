@@ -81,3 +81,16 @@ This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/r
 <a href="assets/hello-world.drawio.svg">![test](assets/hello-world.drawio.svg)</a>
 
 <a href="/assets/hello-world.drawio.svg">![test](/assets/hello-world.drawio.svg)</a>
+
+## External URLs
+
+External urls starting with `http` or `https` are checked.
+
+- <http://github.com>
+- <https://github.com>
+
+## Custom schemes
+
+Unkown schemes like `mailto` are ignored.
+
+- <mailto:info@github.com>
