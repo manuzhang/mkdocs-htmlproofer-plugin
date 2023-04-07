@@ -162,13 +162,18 @@ def test_get_url_status__same_page_anchor(plugin, empty_files):
         'https://extwebsite.com',
         'http://extwebsite.com',
         'https://website.net/path#anchor',
+        'mailto:toto@toto.com',
+        'steam://application',
+        'file://file',
     ),
 )
 def test_get_url_status__external(plugin, empty_files, url):
+    src_path = 'src/path.md'
+    scheme = url.split(":")[0]
     with patch.object(HtmlProoferPlugin, "get_external_url") as mock_get_ext_url:
         mock_get_ext_url.return_value = 200
-        assert plugin.get_url_status(url, 'src/path.md', set(), empty_files, False) == 200
-    mock_get_ext_url.assert_called_once_with(url)
+        assert plugin.get_url_status(url, src_path, set(), empty_files, False) == 200
+    mock_get_ext_url.assert_called_once_with(url, scheme, src_path)
 
 
 def test_get_url_status__local_page(plugin):
