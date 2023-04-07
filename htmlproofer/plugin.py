@@ -105,6 +105,13 @@ class HtmlProoferPlugin(BasePlugin):
                 if is_error:
                     log_warning(error)
 
+    def get_external_url(self, url, scheme, src_path):
+        try:
+            return self.scheme_handlers[scheme](url)
+        except KeyError:
+            log_info(f'Unknown url-scheme "{scheme}:" detected. "{url}" from "{src_path}" will not be checked.')
+        return 0
+
     @lru_cache(maxsize=1000)
     def resolve_web_scheme(self, url: str) -> int:
         try:
@@ -125,13 +132,7 @@ class HtmlProoferPlugin(BasePlugin):
         scheme, _, path, _, fragment = urllib.parse.urlsplit(url)
         if scheme:
             if self.config['validate_external_urls']:
-                try:
-                    return self.scheme_handlers[scheme](url)
-                except KeyError:
-                    log_info(
-                        f'mkdocs-htmlproofer: Unknown url-scheme "{scheme}:" detected. "'
-                        f'"{url}" from "{src_path}" will not be checked.'
-                    )
+                return self.get_external_url(url, scheme, src_path)
             return 0
         if fragment and not path:
             return 0 if url[1:] in all_element_ids else 404
