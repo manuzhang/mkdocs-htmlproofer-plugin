@@ -5,6 +5,7 @@ import re
 import sys
 from typing import Dict, Optional, Set
 import uuid
+import urllib.parse
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
@@ -112,12 +113,13 @@ class HtmlProoferPlugin(BasePlugin):
         if any(pat.match(url) for pat in LOCAL_PATTERNS):
             return 0
 
-        if url.startswith('#'):
-            return 0 if url[1:] in all_element_ids else 404
-        elif EXTERNAL_URL_PATTERN.match(url):
+        scheme, _, path, _, fragment = urllib.parse.urlsplit(url)
+        if scheme:
             if not self.config['validate_external_urls']:
                 return 0
             return self.get_external_url(url)
+        if fragment and not path:
+            return 0 if url[1:] in all_element_ids else 404
         elif not use_directory_urls:
             # use_directory_urls = True injects too many challenges for locating the correct target
             # Markdown file, so disable target anchor validation in this case. Examples include:
