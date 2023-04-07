@@ -1,4 +1,4 @@
-from functools import lru_cache
+from functools import lru_cache, partial
 import os.path
 import pathlib
 import re
@@ -22,7 +22,6 @@ _URL_BOT_ID = f'Bot {uuid.uuid4()}'
 URL_HEADERS = {'User-Agent': _URL_BOT_ID, 'Accept-Language': '*'}
 NAME = "htmlproofer"
 
-EXTERNAL_URL_PATTERN = re.compile(r'https?://')
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 HTML_LINK_PATTERN = re.compile(r'.*<a id=\"(.*)\">.*')
@@ -60,6 +59,10 @@ class HtmlProoferPlugin(BasePlugin):
         self._session.headers.update(URL_HEADERS)
         self._session.max_redirects = 5
         self.files = {}
+        self.scheme_handlers = {
+            "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
+            "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
+        }
         super().__init__()
 
     def on_post_build(self, config: Config)-> None:
@@ -103,7 +106,7 @@ class HtmlProoferPlugin(BasePlugin):
                     log_warning(error)
 
     @lru_cache(maxsize=1000)
-    def get_external_url(self, url: str) -> int:
+    def resolve_web_scheme(self, url: str) -> int:
         try:
             response = self._session.get(url, timeout=URL_TIMEOUT)
             return response.status_code
@@ -121,9 +124,15 @@ class HtmlProoferPlugin(BasePlugin):
 
         scheme, _, path, _, fragment = urllib.parse.urlsplit(url)
         if scheme:
-            if not self.config['validate_external_urls']:
-                return 0
-            return self.get_external_url(url)
+            if self.config['validate_external_urls']:
+                try:
+                    return self.scheme_handlers[scheme](url)
+                except KeyError:
+                    log_info(
+                        f'mkdocs-htmlproofer: Unknown url-scheme "{scheme}:" detected. "'
+                        f'"{url}" from "{src_path}" will not be checked.'
+                    )
+            return 0
         if fragment and not path:
             return 0 if url[1:] in all_element_ids else 404
         elif not use_directory_urls:
