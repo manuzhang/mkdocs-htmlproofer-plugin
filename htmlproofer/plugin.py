@@ -56,7 +56,7 @@ class HtmlProoferPlugin(BasePlugin):
         self.files = {}
         super().__init__()
 
-    def on_post_build(self, config: Config)-> None:
+    def on_post_build(self, config: Config) -> None:
         if self.config['raise_error_after_finish'] and self.invalid_links:
             raise PluginError("Invalid links present.")
 
@@ -107,8 +107,14 @@ class HtmlProoferPlugin(BasePlugin):
         except requests.exceptions.ConnectionError:
             return -1
 
-    def get_url_status(self, url: str, src_path: str, all_element_ids: Set[str], files: Dict[str, File],
-        use_directory_urls: bool) -> int:
+    def get_url_status(
+            self,
+            url: str,
+            src_path: str,
+            all_element_ids: Set[str],
+            files: Dict[str, File],
+            use_directory_urls: bool
+    ) -> int:
         if any(pat.match(url) for pat in LOCAL_PATTERNS):
             return 0
 
@@ -197,7 +203,7 @@ class HtmlProoferPlugin(BasePlugin):
                     if anchor == attr_list_anchor:
                         return True
 
-                heading = re.sub(ATTRLIST_PATTERN, '', heading) # remove any attribute list from heading, before slugify
+                heading = re.sub(ATTRLIST_PATTERN, '', heading)  # remove any attribute list from heading, before slugify
 
                 # Headings are allowed to have images after them, of the form:
                 # # Heading [![Image](image-link)] or ![Image][image-reference]
@@ -212,8 +218,8 @@ class HtmlProoferPlugin(BasePlugin):
             if link_match is not None and link_match.group(1) == anchor:
                 return True
 
-            # Any attribute list at end of paragraphs or after images can also generate an anchor (in addition to the heading ones)
-            # so gather those and check as well (multiple could be a line so gather all)
+            # Any attribute list at end of paragraphs or after images can also generate an anchor (in addition to
+            # the heading ones) so gather those and check as well (multiple could be a line so gather all)
             for attr_list_anchor in re.findall(ATTRLIST_ANCHOR_PATTERN, line):
                 if anchor == attr_list_anchor:
                     return True
