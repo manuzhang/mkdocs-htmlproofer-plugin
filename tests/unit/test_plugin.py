@@ -125,7 +125,7 @@ def test_get_url_status(validate_external: bool):
     plugin.load_config({'validate_external_urls': validate_external})
 
     def get_url():
-        plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files, False)
+        return plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files, False)
 
     if validate_external:
         with pytest.raises(Exception):
