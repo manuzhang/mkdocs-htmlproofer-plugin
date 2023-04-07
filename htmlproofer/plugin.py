@@ -2,13 +2,13 @@ from functools import lru_cache
 import os.path
 import pathlib
 import re
-import sys
 from typing import Dict, Optional, Set
 import uuid
 import urllib.parse
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
+from mkdocs import utils
 from mkdocs.config import Config, config_options
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import BasePlugin
@@ -20,6 +20,7 @@ import urllib3
 URL_TIMEOUT = 10.0
 _URL_BOT_ID = f'Bot {uuid.uuid4()}'
 URL_HEADERS = {'User-Agent': _URL_BOT_ID, 'Accept-Language': '*'}
+NAME = "htmlproofer"
 
 EXTERNAL_URL_PATTERN = re.compile(r'https?://')
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
@@ -35,6 +36,10 @@ ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
 
 urllib3.disable_warnings()
 
+
+log_info = lambda msg, *args, **kwargs: utils.log.info(f"{NAME}: {msg}", *args, **kwargs)
+log_warning = lambda msg, *args, **kwargs: utils.log.warning(f"{NAME}: {msg}", *args, **kwargs)
+log_error = lambda msg, *args, **kwargs: utils.log.error(f"{NAME}: {msg}", *args, **kwargs)
 
 class HtmlProoferPlugin(BasePlugin):
     files: Dict[str, File]
@@ -92,9 +97,10 @@ class HtmlProoferPlugin(BasePlugin):
                 if self.config['raise_error'] and is_error:
                     raise PluginError(error)
                 elif self.config['raise_error_after_finish'] and is_error and not self.invalid_links:
+                    log_error(error)
                     self.invalid_links = True
                 if is_error:
-                    print(error)
+                    log_warning(error)
 
     @lru_cache(maxsize=1000)
     def get_external_url(self, url: str) -> int:
@@ -174,7 +180,7 @@ class HtmlProoferPlugin(BasePlugin):
         try:
             return files[search_path]
         except KeyError:
-            print(f"Warning: Unable to locate source file for: {url}", file=sys.stderr)
+            utils.log.warning(f"Unable to locate source file for: {url}")
             return None
 
     @staticmethod
