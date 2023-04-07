@@ -3,8 +3,8 @@ import os.path
 import pathlib
 import re
 from typing import Dict, Optional, Set
-import uuid
 import urllib.parse
+import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify

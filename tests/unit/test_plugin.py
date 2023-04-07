@@ -1,11 +1,11 @@
 import os.path
 from unittest.mock import Mock, patch
 
-import mkdocs.utils
 from mkdocs.config import Config
 from mkdocs.exceptions import PluginError
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
+import mkdocs.utils
 import pytest
 from requests import Response
 
