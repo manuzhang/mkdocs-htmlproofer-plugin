@@ -29,6 +29,7 @@ def mock_requests():
         mock_head.side_effect = Exception("don't make network requests from tests")
         yield mock_head
 
+
 @pytest.mark.parametrize(
     'raise_error_after_finish_template', (False, True)
 )
@@ -60,12 +61,18 @@ def test_on_post_build(raise_error_after_finish_template, invalid_links_template
 @pytest.mark.parametrize(
     'raise_error_after_finish_template', (False, True)
 )
-def test_on_post_page(empty_files, mock_requests, validate_rendered_template, raise_error_template, raise_error_after_finish_template):
+def test_on_post_page(
+        empty_files,
+        mock_requests,
+        validate_rendered_template,
+        raise_error_template,
+        raise_error_after_finish_template
+):
     plugin = HtmlProoferPlugin()
     plugin.load_config({
         'validate_rendered_template': validate_rendered_template,
         'raise_error': raise_error_template,
-        'raise_error_after_finish':raise_error_after_finish_template,
+        'raise_error_after_finish': raise_error_after_finish_template,
     })
 
     # Always raise a 500 error
@@ -116,7 +123,8 @@ def test_get_url_status(validate_external: bool):
     plugin = HtmlProoferPlugin()
     plugin.load_config({'validate_external_urls': validate_external})
 
-    get_url = lambda: plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files, False)
+    def get_url():
+        return plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files, False)
 
     if validate_external:
         with pytest.raises(Exception):
@@ -139,16 +147,27 @@ def test_get_url_status(validate_external: bool):
         (r'## Heading {: #customanchor}', 'customanchor', True),
         (r'## Heading {.customclass #customanchor}', 'customanchor', True),
         (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
-        (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this-imageimage-link', True), # test faulty image in heading syntax
+        # test faulty image in heading syntax
+        (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this-imageimage-link', True),
+
         (r'## refer to this [![image](image-link){#imageanchorheading}]', 'imageanchorheading', True),
-        (r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}', 'imageanchor1', True),
-        (r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}', 'imageanchor2', True),
+        (
+                r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}',
+                'imageanchor1',
+                True
+        ),
+        (
+                r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}',
+                'imageanchor2',
+                True
+        ),
         (r'paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
         (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
     ]
 )
 def test_contains_anchor(plugin, markdown, anchor, expected):
     assert plugin.contains_anchor(markdown, anchor) == expected
+
 
 def test_get_url_status__same_page_anchor(plugin, empty_files):
     assert plugin.get_url_status('#ref', 'src/path.md', {'ref'}, empty_files, False) == 0
@@ -193,7 +212,6 @@ def test_get_url_status__local_page(plugin):
 
 def test_get_url_status__non_markdown_page(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
-    page1_page = Mock(spec=Page, markdown='# Page One\n## Sub Heading\nContent')
     files = {os.path.normpath(file.url): file for file in Files([
         Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
         Mock(spec=File, src_path='drawing.svg', dest_path='drawing.svg', url='drawing.svg', page=None),
@@ -212,10 +230,34 @@ def test_get_url_status__local_page_nested(plugin):
     nested2_sibling_page = Mock(spec=Page, markdown='# Nested Sibling')
     files = {os.path.normpath(file.url): file for file in Files([
         Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
-        Mock(spec=File, src_path='foo/bar/nested.md', dest_path='foo/bar/nested.html', url='foo/bar/nested.html', page=nested1_page),
-        Mock(spec=File, src_path='foo/bar/sibling.md', dest_path='foo/bar/sibling.html', url='foo/bar/sibling.html', page=nested1_sibling_page),
-        Mock(spec=File, src_path='foo/baz/nested.md', dest_path='foo/baz/nested.html', url='foo/baz/nested.html', page=nested2_page),
-        Mock(spec=File, src_path='foo/baz/sibling.md', dest_path='foo/baz/sibling.html', url='foo/baz/sibling.html', page=nested2_sibling_page),
+        Mock(
+            spec=File,
+            src_path='foo/bar/nested.md',
+            dest_path='foo/bar/nested.html',
+            url='foo/bar/nested.html',
+            page=nested1_page
+        ),
+        Mock(
+            spec=File,
+            src_path='foo/bar/sibling.md',
+            dest_path='foo/bar/sibling.html',
+            url='foo/bar/sibling.html',
+            page=nested1_sibling_page
+        ),
+        Mock(
+            spec=File,
+            src_path='foo/baz/nested.md',
+            dest_path='foo/baz/nested.html',
+            url='foo/baz/nested.html',
+            page=nested2_page
+        ),
+        Mock(
+            spec=File,
+            src_path='foo/baz/sibling.md',
+            dest_path='foo/baz/sibling.html',
+            url='foo/baz/sibling.html',
+            page=nested2_sibling_page
+        ),
     ])}
 
     assert plugin.get_url_status('nested.html#nested-one', 'foo/bar/sibling.md', set(), files, False) == 0
