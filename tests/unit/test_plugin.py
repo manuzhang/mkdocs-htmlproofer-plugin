@@ -5,6 +5,7 @@ from mkdocs.config import Config
 from mkdocs.exceptions import PluginError
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
+import mkdocs.utils
 import pytest
 from requests import Response
 
@@ -181,13 +182,58 @@ def test_get_url_status__same_page_anchor(plugin, empty_files):
         'https://extwebsite.com',
         'http://extwebsite.com',
         'https://website.net/path#anchor',
+        'mailto:toto@toto.com',
+        'steam://application',
+        'file://file',
     ),
 )
 def test_get_url_status__external(plugin, empty_files, url):
+    src_path = 'src/path.md'
+    scheme = url.split(":")[0]
+    expected_status = 200
+
     with patch.object(HtmlProoferPlugin, "get_external_url") as mock_get_ext_url:
-        mock_get_ext_url.return_value = 200
-        assert plugin.get_url_status(url, 'src/path.md', set(), empty_files, False) == 200
-    mock_get_ext_url.assert_called_once_with(url)
+        mock_get_ext_url.return_value = expected_status
+        status = plugin.get_url_status(url, src_path, set(), empty_files, False)
+
+    mock_get_ext_url.assert_called_once_with(url, scheme, src_path)
+    assert status == expected_status
+
+
+@pytest.mark.parametrize("scheme", ('http', 'https'))
+def test_get_external_url__web_scheme(scheme):
+    src_path = 'src/path.md'
+    url = f"{scheme}://path.html"
+    expected_status = 200
+
+    with patch.object(HtmlProoferPlugin, "resolve_web_scheme") as mock_resolve_web_scheme:
+        mock_resolve_web_scheme.return_value = expected_status
+        plugin = HtmlProoferPlugin()
+        plugin.load_config({})
+
+        status = plugin.get_external_url(url, scheme, src_path)
+
+    mock_resolve_web_scheme.assert_called_once_with(plugin, url)
+    assert status == expected_status
+
+
+@pytest.mark.parametrize("scheme", ('mailto', 'file', 'steam', 'abc'))
+def test_get_external_url__unknown_scheme(scheme):
+    src_path = 'src/path.md'
+    url = f"{scheme}://path.html"
+    expected_status = 0
+
+    with patch.object(HtmlProoferPlugin, "resolve_web_scheme") as mock_resolve_web_scheme:
+        mock_resolve_web_scheme.return_value = expected_status
+        plugin = HtmlProoferPlugin()
+        plugin.load_config({})
+
+        with patch.object(mkdocs.utils.log, "info") as mock_log_info:
+            status = plugin.get_external_url(url, scheme, src_path)
+
+    mock_log_info.assert_called_once()
+    mock_resolve_web_scheme.assert_not_called()
+    assert status == expected_status
 
 
 def test_get_url_status__local_page(plugin):

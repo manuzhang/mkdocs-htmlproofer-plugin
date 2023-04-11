@@ -1,13 +1,14 @@
-from functools import lru_cache
+from functools import lru_cache, partial
 import os.path
 import pathlib
 import re
-import sys
 from typing import Dict, Optional, Set
+import urllib.parse
 import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
+from mkdocs import utils
 from mkdocs.config import Config, config_options
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import BasePlugin
@@ -19,8 +20,8 @@ import urllib3
 URL_TIMEOUT = 10.0
 _URL_BOT_ID = f'Bot {uuid.uuid4()}'
 URL_HEADERS = {'User-Agent': _URL_BOT_ID, 'Accept-Language': '*'}
+NAME = "htmlproofer"
 
-EXTERNAL_URL_PATTERN = re.compile(r'https?://')
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 HTML_LINK_PATTERN = re.compile(r'.*<a id=\"(.*)\">.*')
@@ -33,6 +34,18 @@ ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
 ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
 
 urllib3.disable_warnings()
+
+
+def log_info(msg, *args, **kwargs):
+    utils.log.info(f"{NAME}: {msg}", *args, **kwargs)
+
+
+def log_warning(msg, *args, **kwargs):
+    utils.log.warning(f"{NAME}: {msg}", *args, **kwargs)
+
+
+def log_error(msg, *args, **kwargs):
+    utils.log.error(f"{NAME}: {msg}", *args, **kwargs)
 
 
 class HtmlProoferPlugin(BasePlugin):
@@ -54,6 +67,10 @@ class HtmlProoferPlugin(BasePlugin):
         self._session.headers.update(URL_HEADERS)
         self._session.max_redirects = 5
         self.files = {}
+        self.scheme_handlers = {
+            "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
+            "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
+        }
         super().__init__()
 
     def on_post_build(self, config: Config) -> None:
@@ -91,12 +108,20 @@ class HtmlProoferPlugin(BasePlugin):
                 if self.config['raise_error'] and is_error:
                     raise PluginError(error)
                 elif self.config['raise_error_after_finish'] and is_error and not self.invalid_links:
+                    log_error(error)
                     self.invalid_links = True
                 if is_error:
-                    print(error)
+                    log_warning(error)
+
+    def get_external_url(self, url, scheme, src_path):
+        try:
+            return self.scheme_handlers[scheme](url)
+        except KeyError:
+            log_info(f'Unknown url-scheme "{scheme}:" detected. "{url}" from "{src_path}" will not be checked.')
+        return 0
 
     @lru_cache(maxsize=1000)
-    def get_external_url(self, url: str) -> int:
+    def resolve_web_scheme(self, url: str) -> int:
         try:
             response = self._session.get(url, timeout=URL_TIMEOUT)
             return response.status_code
@@ -118,12 +143,13 @@ class HtmlProoferPlugin(BasePlugin):
         if any(pat.match(url) for pat in LOCAL_PATTERNS):
             return 0
 
-        if url.startswith('#'):
+        scheme, _, path, _, fragment = urllib.parse.urlsplit(url)
+        if scheme:
+            if self.config['validate_external_urls']:
+                return self.get_external_url(url, scheme, src_path)
+            return 0
+        if fragment and not path:
             return 0 if url[1:] in all_element_ids else 404
-        elif EXTERNAL_URL_PATTERN.match(url):
-            if not self.config['validate_external_urls']:
-                return 0
-            return self.get_external_url(url)
         elif not use_directory_urls:
             # use_directory_urls = True injects too many challenges for locating the correct target
             # Markdown file, so disable target anchor validation in this case. Examples include:
@@ -178,7 +204,7 @@ class HtmlProoferPlugin(BasePlugin):
         try:
             return files[search_path]
         except KeyError:
-            print(f"Warning: Unable to locate source file for: {url}", file=sys.stderr)
+            utils.log.warning(f"Unable to locate source file for: {url}")
             return None
 
     @staticmethod
