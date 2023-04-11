@@ -6,6 +6,7 @@
 
 * [Installation](#installation)
 * [Acknowledgement](#acknowledge)
+* [Landing page](../../../README.md)
 
 ## Installation
 
