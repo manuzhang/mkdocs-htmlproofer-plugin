@@ -105,13 +105,14 @@ class HtmlProoferPlugin(BasePlugin):
                 error = f'invalid url - {url} [{url_status}] [{page.file.src_path}]'
 
                 is_error = self.is_error(self.config, url, url_status)
-                if self.config['raise_error'] and is_error:
-                    raise PluginError(error)
-                elif self.config['raise_error_after_finish'] and is_error and not self.invalid_links:
-                    log_error(error)
-                    self.invalid_links = True
                 if is_error:
-                    log_warning(error)
+                    if self.config['raise_error']:
+                        raise PluginError(error)
+                    elif self.config['raise_error_after_finish']:
+                        log_error(error)
+                        self.invalid_links = True
+                    else:
+                        log_warning(error)
 
     def get_external_url(self, url, scheme, src_path):
         try:
