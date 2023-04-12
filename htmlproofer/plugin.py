@@ -99,7 +99,14 @@ class HtmlProoferPlugin(BasePlugin):
         for a in soup.find_all('a', href=True):
             url = a['href']
 
-            url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
+            url_status = self.get_url_status(
+                url,
+                pathlib.Path(page.file.src_path),
+                pathlib.Path(config.docs_dir),
+                all_element_ids,
+                self.files,
+                use_directory_urls
+            )
 
             if self.bad_url(url_status) is True:
                 error = f'invalid url - {url} [{url_status}] [{page.file.src_path}]'
@@ -136,7 +143,8 @@ class HtmlProoferPlugin(BasePlugin):
     def get_url_status(
             self,
             url: str,
-            src_path: str,
+            src_path: pathlib.Path,
+            docs_path: pathlib.Path,
             all_element_ids: Set[str],
             files: Dict[str, File],
             use_directory_urls: bool
@@ -156,28 +164,39 @@ class HtmlProoferPlugin(BasePlugin):
             # Markdown file, so disable target anchor validation in this case. Examples include:
             # ../..#BAD_ANCHOR style links to index.html and extra ../ inserted into relative
             # links.
-            if not self.is_url_target_valid(url, src_path, files):
+            if not self.is_url_target_valid(url, src_path, docs_path, files):
                 return 404
         return 0
 
     @staticmethod
-    def is_url_target_valid(url: str, src_path: str, files: Dict[str, File]) -> bool:
+    def is_url_target_valid(url: str, src_path: pathlib.Path, docs_path: pathlib.Path, files: Dict[str, File]) -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
 
         url_target, _, optional_anchor = match.groups()
-        _, extension = os.path.splitext(url_target)
-        if extension == ".html":
-            # URL is a link to another local Markdown file that may includes an anchor.
-            target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, src_path, files)
+        url_target_path = pathlib.Path(url_target)
+
+        if not url_target_path.root:
+            abs_src_path = docs_path / src_path
+            abs_dst_path = (abs_src_path.parent / url_target).resolve()
+            abs_src_level = len(abs_src_path.parts)
+            abs_dst_level = len(abs_dst_path.parts)
+            rel_src_level = len(src_path.parts)
+            is_out_of_root = abs_src_level - abs_dst_level > rel_src_level
+            if is_out_of_root:
+                return abs_dst_path.exists()
+
+        if url_target_path.suffix == ".html":
+            # URL is a link to another local Markdown file that may include an anchor.
+            target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, str(src_path), files)
             if target_markdown is None:
                 # The corresponding Markdown page was not found.
                 return False
             if optional_anchor and not HtmlProoferPlugin.contains_anchor(target_markdown, optional_anchor):
                 # The corresponding Markdown header for this anchor was not found.
                 return False
-        elif HtmlProoferPlugin.find_source_file(url_target, src_path, files) is None:
+        elif HtmlProoferPlugin.find_source_file(url_target, str(src_path), files) is None:
             return False
 
         return True
