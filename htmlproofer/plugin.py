@@ -72,6 +72,11 @@ class HtmlProoferPlugin(BasePlugin):
             "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
         }
         super().__init__()
+        self.docs_path = pathlib.Path()
+
+    def on_config(self, config: Config) -> Optional[Config]:
+        self.docs_path = pathlib.Path(config.docs_dir)  # type: ignore
+        return config
 
     def on_post_build(self, config: Config) -> None:
         if self.config['raise_error_after_finish'] and self.invalid_links:
@@ -99,14 +104,7 @@ class HtmlProoferPlugin(BasePlugin):
         for a in soup.find_all('a', href=True):
             url = a['href']
 
-            url_status = self.get_url_status(
-                url,
-                pathlib.Path(page.file.src_path),
-                pathlib.Path(config.docs_dir),  # type: ignore
-                all_element_ids,
-                self.files,
-                use_directory_urls
-            )
+            url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
 
             if self.bad_url(url_status) is True:
                 error = f'invalid url - {url} [{url_status}] [{page.file.src_path}]'
@@ -143,8 +141,7 @@ class HtmlProoferPlugin(BasePlugin):
     def get_url_status(
             self,
             url: str,
-            src_path: pathlib.Path,
-            docs_path: pathlib.Path,
+            src_path: str,
             all_element_ids: Set[str],
             files: Dict[str, File],
             use_directory_urls: bool
@@ -164,7 +161,7 @@ class HtmlProoferPlugin(BasePlugin):
             # Markdown file, so disable target anchor validation in this case. Examples include:
             # ../..#BAD_ANCHOR style links to index.html and extra ../ inserted into relative
             # links.
-            if not self.is_url_target_valid(url, src_path, docs_path, files):
+            if not self.is_url_target_valid(url, pathlib.Path(src_path), self.docs_path, files):
                 return 404
         return 0
 
