@@ -102,7 +102,7 @@ class HtmlProoferPlugin(BasePlugin):
             url_status = self.get_url_status(
                 url,
                 pathlib.Path(page.file.src_path),
-                pathlib.Path(config.docs_dir),
+                pathlib.Path(config.docs_dir),  # type: ignore
                 all_element_ids,
                 self.files,
                 use_directory_urls
