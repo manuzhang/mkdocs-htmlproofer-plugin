@@ -1,6 +1,5 @@
 from functools import lru_cache, partial
 import os.path
-import packaging.version
 import pathlib
 import re
 from typing import Dict, Optional, Set
@@ -16,6 +15,7 @@ from mkdocs.exceptions import PluginError
 from mkdocs.plugins import BasePlugin
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
+import packaging.version
 import requests
 import urllib3
 
