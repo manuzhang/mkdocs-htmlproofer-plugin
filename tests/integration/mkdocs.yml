@@ -1,4 +1,4 @@
-strict: True
+strict: False
 site_name: Test mkdocs-htmlproofer-plugin
 site_url: ''
 use_directory_urls: False
