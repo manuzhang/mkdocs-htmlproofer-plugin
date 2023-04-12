@@ -1,5 +1,6 @@
 from functools import lru_cache, partial
 import os.path
+import packaging.version
 import pathlib
 import re
 from typing import Dict, Optional, Set
@@ -8,6 +9,7 @@ import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
+import mkdocs
 from mkdocs import utils
 from mkdocs.config import Config, config_options
 from mkdocs.exceptions import PluginError
@@ -75,7 +77,11 @@ class HtmlProoferPlugin(BasePlugin):
         self.docs_path = pathlib.Path()
 
     def on_config(self, config: Config) -> Optional[Config]:
-        self.docs_path = pathlib.Path(config.docs_dir)  # type: ignore
+        if packaging.version.parse(mkdocs.__version__) >= packaging.version.Version('1.4'):
+            docs_dir = config.docs_dir  # type: ignore
+        else:
+            docs_dir = config.data['docs_dir']
+        self.docs_path = pathlib.Path(docs_dir)
         return config
 
     def on_post_build(self, config: Config) -> None:
