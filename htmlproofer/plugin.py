@@ -172,21 +172,17 @@ class HtmlProoferPlugin(BasePlugin):
 
         url_target, _, optional_anchor = match.groups()
         _, extension = os.path.splitext(url_target)
-        try:
-            if extension == ".html":
-                # URL is a link to another local Markdown file that may include an anchor.
-                target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, src_path, files)
-                if target_markdown is None:
-                    # The corresponding Markdown page was not found.
-                    return False
-                if optional_anchor and not HtmlProoferPlugin.contains_anchor(target_markdown, optional_anchor):
-                    # The corresponding Markdown header for this anchor was not found.
-                    return False
-            elif HtmlProoferPlugin.find_source_file(url_target, src_path, files) is None:
+        if extension == ".html":
+            # URL is a link to another local Markdown file that may include an anchor.
+            target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, src_path, files)
+            if target_markdown is None:
+                # The corresponding Markdown page was not found.
                 return False
-        except FileNotFoundError:
+            if optional_anchor and not HtmlProoferPlugin.contains_anchor(target_markdown, optional_anchor):
+                # The corresponding Markdown header for this anchor was not found.
+                return False
+        elif HtmlProoferPlugin.find_source_file(url_target, src_path, files) is None:
             return False
-
         return True
 
     @staticmethod
@@ -199,7 +195,7 @@ class HtmlProoferPlugin(BasePlugin):
         return None
 
     @staticmethod
-    def find_source_file(url: str, src_path: str, files: Dict[str, File]) -> File:
+    def find_source_file(url: str, src_path: str, files: Dict[str, File]) -> Optional[File]:
         """From a built URL, find the original file from the project that built it."""
 
         if len(url) > 1 and url[0] == '/':
@@ -211,8 +207,8 @@ class HtmlProoferPlugin(BasePlugin):
 
         try:
             return files[search_path]
-        except KeyError as error:
-            raise FileNotFoundError(url) from error
+        except KeyError:
+            return None
 
     @staticmethod
     def contains_anchor(markdown: str, anchor: str) -> bool:
