@@ -319,6 +319,53 @@ def test_get_url_status__local_page_nested(plugin):
     assert plugin.get_url_status('/index.html', 'foo/baz/sibling.md', set(), files, False) == 0
 
 
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_get_url_status__excluded_non_existing_relative_url__no_warning(log_warning_mock, plugin):
+    url_status = 404
+    url = "non-existing.html"
+    src_path = "index.md"
+    files = {}
+    plugin.config['raise_error_excludes'][url_status] = [url]
+
+    status = plugin.get_url_status(url, src_path, set(), files, False)
+
+    log_warning_mock.assert_not_called()
+    assert 0 == status
+
+
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_get_url_status__excluded_existing_relative_url__no_warning(log_warning_mock, plugin):
+    url_status = 404
+    filename = "existing"
+    url = f"{filename}.html"
+    src_path = f"{filename}.md"
+    existing_page = Mock(spec=Page, markdown='')
+    files = {
+        os.path.normpath(file.url): file for file in Files([
+            Mock(spec=File, src_path=src_path, dest_path=url, url=url, page=existing_page)
+        ])
+    }
+    plugin.config['raise_error_excludes'][url_status] = [url]
+
+    status = plugin.get_url_status(url, src_path, set(), files, False)
+
+    log_warning_mock.assert_not_called()
+    assert 0 == status
+
+
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_get_url_status__non_existing_relative_url__warning_and_404(log_warning_mock, plugin):
+    expected_url_status = 404
+    url = "non-existing.html"
+    src_path = "index.md"
+    files = {}
+
+    status = plugin.get_url_status(url, src_path, set(), files, False)
+
+    log_warning_mock.assert_called_once()
+    assert expected_url_status == status
+
+
 def test_report_invalid_url__raise_error__highest_priority(plugin):
     plugin.config['raise_error'] = True
     plugin.config['raise_error_after_finish'] = True
