@@ -156,8 +156,12 @@ class HtmlProoferPlugin(BasePlugin):
             # Markdown file, so disable target anchor validation in this case. Examples include:
             # ../..#BAD_ANCHOR style links to index.html and extra ../ inserted into relative
             # links.
-            if not self.is_url_target_valid(url, src_path, files):
-                return 404
+            is_valid = self.is_url_target_valid(url, src_path, files)
+            url_status = 404
+            if not is_valid and self.is_error(self.config, url, url_status):
+                log_warning(f"Unable to locate source file for: {url}")
+                return url_status
+            return 0
         return 0
 
     @staticmethod
@@ -168,16 +172,19 @@ class HtmlProoferPlugin(BasePlugin):
 
         url_target, _, optional_anchor = match.groups()
         _, extension = os.path.splitext(url_target)
-        if extension == ".html":
-            # URL is a link to another local Markdown file that may includes an anchor.
-            target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, src_path, files)
-            if target_markdown is None:
-                # The corresponding Markdown page was not found.
+        try:
+            if extension == ".html":
+                # URL is a link to another local Markdown file that may include an anchor.
+                target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, src_path, files)
+                if target_markdown is None:
+                    # The corresponding Markdown page was not found.
+                    return False
+                if optional_anchor and not HtmlProoferPlugin.contains_anchor(target_markdown, optional_anchor):
+                    # The corresponding Markdown header for this anchor was not found.
+                    return False
+            elif HtmlProoferPlugin.find_source_file(url_target, src_path, files) is None:
                 return False
-            if optional_anchor and not HtmlProoferPlugin.contains_anchor(target_markdown, optional_anchor):
-                # The corresponding Markdown header for this anchor was not found.
-                return False
-        elif HtmlProoferPlugin.find_source_file(url_target, src_path, files) is None:
+        except FileNotFoundError:
             return False
 
         return True
@@ -192,7 +199,7 @@ class HtmlProoferPlugin(BasePlugin):
         return None
 
     @staticmethod
-    def find_source_file(url: str, src_path: str, files: Dict[str, File]) -> Optional[File]:
+    def find_source_file(url: str, src_path: str, files: Dict[str, File]) -> File:
         """From a built URL, find the original file from the project that built it."""
 
         if len(url) > 1 and url[0] == '/':
@@ -204,9 +211,8 @@ class HtmlProoferPlugin(BasePlugin):
 
         try:
             return files[search_path]
-        except KeyError:
-            utils.log.warning(f"Unable to locate source file for: {url}")
-            return None
+        except KeyError as error:
+            raise FileNotFoundError(url) from error
 
     @staticmethod
     def contains_anchor(markdown: str, anchor: str) -> bool:
