@@ -6,6 +6,7 @@
 
 * [Installation](#installation)
 * [Acknowledgement](#acknowledge)
+* [Browse Tests](../../../tests)
 
 ## Installation
 
