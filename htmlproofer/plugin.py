@@ -101,17 +101,18 @@ class HtmlProoferPlugin(BasePlugin):
 
             url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
 
-            if self.bad_url(url_status) is True:
-                error = f'invalid url - {url} [{url_status}] [{page.file.src_path}]'
+            if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
+                self.report_invalid_url(url, url_status, page.file.src_path)
 
-                is_error = self.is_error(self.config, url, url_status)
-                if self.config['raise_error'] and is_error:
-                    raise PluginError(error)
-                elif self.config['raise_error_after_finish'] and is_error and not self.invalid_links:
-                    log_error(error)
-                    self.invalid_links = True
-                if is_error:
-                    log_warning(error)
+    def report_invalid_url(self, url, url_status, src_path):
+        error = f'invalid url - {url} [{url_status}] [{src_path}]'
+        if self.config['raise_error']:
+            raise PluginError(error)
+        elif self.config['raise_error_after_finish']:
+            log_error(error)
+            self.invalid_links = True
+        else:
+            log_warning(error)
 
     def get_external_url(self, url, scheme, src_path):
         try:
@@ -155,8 +156,12 @@ class HtmlProoferPlugin(BasePlugin):
             # Markdown file, so disable target anchor validation in this case. Examples include:
             # ../..#BAD_ANCHOR style links to index.html and extra ../ inserted into relative
             # links.
-            if not self.is_url_target_valid(url, src_path, files):
-                return 404
+            is_valid = self.is_url_target_valid(url, src_path, files)
+            url_status = 404
+            if not is_valid and self.is_error(self.config, url, url_status):
+                log_warning(f"Unable to locate source file for: {url}")
+                return url_status
+            return 0
         return 0
 
     @staticmethod
@@ -168,7 +173,7 @@ class HtmlProoferPlugin(BasePlugin):
         url_target, _, optional_anchor = match.groups()
         _, extension = os.path.splitext(url_target)
         if extension == ".html":
-            # URL is a link to another local Markdown file that may includes an anchor.
+            # URL is a link to another local Markdown file that may include an anchor.
             target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, src_path, files)
             if target_markdown is None:
                 # The corresponding Markdown page was not found.
@@ -178,7 +183,6 @@ class HtmlProoferPlugin(BasePlugin):
                 return False
         elif HtmlProoferPlugin.find_source_file(url_target, src_path, files) is None:
             return False
-
         return True
 
     @staticmethod
@@ -204,7 +208,6 @@ class HtmlProoferPlugin(BasePlugin):
         try:
             return files[search_path]
         except KeyError:
-            utils.log.warning(f"Unable to locate source file for: {url}")
             return None
 
     @staticmethod
