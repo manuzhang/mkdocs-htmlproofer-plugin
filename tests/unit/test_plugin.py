@@ -9,6 +9,7 @@ import mkdocs.utils
 import pytest
 from requests import Response
 
+import htmlproofer.plugin
 from htmlproofer.plugin import HtmlProoferPlugin
 
 
@@ -316,3 +317,48 @@ def test_get_url_status__local_page_nested(plugin):
     assert plugin.get_url_status('foo/baz/nested.html#nested-two', 'index.md', set(), files, False) == 0
 
     assert plugin.get_url_status('/index.html', 'foo/baz/sibling.md', set(), files, False) == 0
+
+
+def test_report_invalid_url__raise_error__highest_priority(plugin):
+    plugin.config['raise_error'] = True
+    plugin.config['raise_error_after_finish'] = True
+
+    with pytest.raises(PluginError):
+        plugin.report_invalid_url(url='', url_status=404, src_path="")
+
+
+@patch.object(htmlproofer.plugin, "log_error", autospec=True)
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_report_invalid_url__raise_error__raises_and_no_log(log_warning_mock, log_error_mock, plugin):
+    plugin.config['raise_error'] = True
+
+    with pytest.raises(PluginError):
+        plugin.report_invalid_url(url='', url_status=404, src_path="")
+    log_warning_mock.assert_not_called()
+    log_error_mock.assert_not_called()
+
+
+@patch.object(htmlproofer.plugin, "log_error", autospec=True)
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_report_invalid_url__raise_error_after_finish__log_error_is_called(log_warning_mock, log_error_mock, plugin):
+    plugin.config['raise_error'] = False
+    plugin.config['raise_error_after_finish'] = True
+
+    plugin.report_invalid_url(url='', url_status=404, src_path="")
+
+    log_warning_mock.assert_not_called()
+    log_error_mock.assert_called_once()
+    assert plugin.invalid_links
+
+
+@patch.object(htmlproofer.plugin, "log_error", autospec=True)
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_report_invalid_url__not_raise_error__only_log_warning_is_called(log_warning_mock, log_error_mock, plugin):
+    plugin.config['raise_error'] = False
+    plugin.config['raise_error_after_finish'] = False
+
+    plugin.report_invalid_url(url='', url_status=404, src_path="")
+
+    log_warning_mock.assert_called_once()
+    log_error_mock.assert_not_called()
+    assert not plugin.invalid_links
