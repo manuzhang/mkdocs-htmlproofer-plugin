@@ -1,3 +1,4 @@
+import fnmatch
 from functools import lru_cache, partial
 import os.path
 import pathlib
@@ -5,7 +6,6 @@ import re
 from typing import Dict, Optional, Set
 import urllib.parse
 import uuid
-import fnmatch
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
