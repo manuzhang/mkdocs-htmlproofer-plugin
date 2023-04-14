@@ -91,6 +91,38 @@ plugins:
         400: ['*']
 ```
 
+### `ignore_urls`
+
+Avoid validating the given list of URLs by ignoring them altogether. Each URL in the
+list support unix style wildcards `*`, `[]`, `?`, etc.
+
+Unlike `raise_error_excludes`, ignored URLs will not be fetched at all.
+
+```yaml
+plugins:
+  - search
+  - htmlproofer:
+      raise_error: True
+      ignore_urls:
+        - https://github.com/myprivateorg/*
+        - https://app.dynamic-service-of-some-kind.io*
+```
+
+### `warn_on_ignored_urls`
+
+Log a warning when ignoring URLs with `ignore_urls` option. Defaults to `false` (no warning).
+
+```yaml
+plugins:
+  - search
+  - htmlproofer:
+      raise_error: True
+      ignore_urls:
+        - https://github.com/myprivateorg/*
+        - https://app.dynamic-service-of-some-kind.io*
+      warn_on_ignored_urls: true
+```
+
 ### `validate_external_urls`
 
 Avoids validating any external URLs (i.e those starting with http:// or https://).

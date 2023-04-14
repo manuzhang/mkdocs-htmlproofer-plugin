@@ -5,6 +5,7 @@ import re
 from typing import Dict, Optional, Set
 import urllib.parse
 import uuid
+import fnmatch
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
@@ -59,6 +60,8 @@ class HtmlProoferPlugin(BasePlugin):
         ('raise_error_excludes', config_options.Type(dict, default={})),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
+        ('ignore_urls', config_options.Type(list, default=[])),
+        ('warn_on_ignored_urls', config_options.Type(bool, default=False)),
     )
 
     def __init__(self):
@@ -98,6 +101,16 @@ class HtmlProoferPlugin(BasePlugin):
         all_element_ids.add('')  # Empty anchor is commonly used, but not real
         for a in soup.find_all('a', href=True):
             url = a['href']
+
+            ignore = False
+            for ignore_url_exp in self.config['ignore_urls']:
+                if fnmatch.fnmatch(url, ignore_url_exp):
+                    ignore = True
+                    break
+            if ignore:
+                if self.config['warn_on_ignored_urls']:
+                    log_warning(f"ignoring URL {url} from {page.file.src_path}")
+                continue
 
             url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
 
