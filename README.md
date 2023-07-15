@@ -8,7 +8,7 @@
 
 0. Prerequisites
 
-* Python >= 3.6
+* Python >= 3.8
 * MkDocs >= 0.17
 
 1. Install the package with pip:
