@@ -20,7 +20,7 @@ setup(
     license='MIT',
     python_requires='>=3.8',
     install_requires=[
-        'mkdocs>=0.17',
+        'mkdocs>=1.4.0',
         'Markdown',
         'requests',
         'beautifulsoup4',

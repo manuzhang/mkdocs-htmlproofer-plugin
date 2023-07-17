@@ -12,8 +12,8 @@
 
 0. Prerequisites
 
-* Python >= 3.6
-* MkDocs >= 0.17
+* Python >= 3.8
+* MkDocs >= 1.4.0
 
 1. Install the package with pip:
 
