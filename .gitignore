@@ -43,3 +43,6 @@ test/integration/site
 
 # PyCharm
 .idea
+
+# Project specfic
+tests/integration/site
