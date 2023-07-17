@@ -23,7 +23,7 @@ or to a nested page
 But allows valid anchors such as
 [Main Page](../index.md#mkdocs-htmlproofer-plugin),
 [Table of Contents](../index.md#table-of-contents), and
-[Emoji Anchor](./page2.md#title-with-emojis)
+[Emoji Anchor](./page2.md#title-with-emojis).
 
 ## Image Link absolute/relative
 
