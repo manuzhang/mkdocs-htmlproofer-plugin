@@ -33,6 +33,13 @@ LOCAL_PATTERNS = [
 ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
 ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
 
+# Example emojis:
+#   :banana:
+#   :smiley_cat:
+#   :octicons-apps-16:
+#   :material-star:
+EMOJI_PATTERN = re.compile(r'\:[a-z0-9_-]+\:')
+
 urllib3.disable_warnings()
 
 
@@ -225,7 +232,7 @@ class HtmlProoferPlugin(BasePlugin):
                 # # Heading {: #testanchor .testclass }
                 # # Heading {.testclass #testanchor}
                 # # Heading {.testclass}
-                # these can override the headings anchor id, or alternativly just provide additional class etc.
+                # these can override the headings anchor id, or alternatively just provide additional class etc.
                 attr_list_anchor_match = ATTRLIST_ANCHOR_PATTERN.match(heading)
                 if attr_list_anchor_match is not None:
                     attr_list_anchor = heading_match.groups()[1]
@@ -238,6 +245,10 @@ class HtmlProoferPlugin(BasePlugin):
                 # # Heading [![Image](image-link)] or ![Image][image-reference]
                 # But these images are not included in the generated anchor, so remove them.
                 heading = re.sub(IMAGE_PATTERN, '', heading)
+
+                # Headings are allowed to have emojis in them under certain Mkdocs themes.
+                # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown-extensions/#emoji
+                heading = re.sub(EMOJI_PATTERN, '', heading)
 
                 anchor_slug = slugify(heading, '-')
                 if anchor == anchor_slug:

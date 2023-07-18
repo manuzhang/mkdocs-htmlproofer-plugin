@@ -21,8 +21,9 @@ or to a nested page
 [Invalid Anchor](./page2.md#BAD_ANCHOR).
 
 But allows valid anchors such as
-[Main Page](../index.md#mkdocs-htmlproofer-plugin) and
-[Table of Contents](../index.md#table-of-contents).
+[Main Page](../index.md#mkdocs-htmlproofer-plugin),
+[Table of Contents](../index.md#table-of-contents), and
+[Emoji Anchor](./page2.md#title-with-emojis).
 
 ## Image Link absolute/relative
 
