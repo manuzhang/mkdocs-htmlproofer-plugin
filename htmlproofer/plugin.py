@@ -87,7 +87,7 @@ class HtmlProoferPlugin(BasePlugin):
         if self.config['raise_error_after_finish'] and self.invalid_links:
             raise PluginError("Invalid links present.")
 
-    def on_page_markdown(self, markdown: str, page: Page, config: Config, files: Files) -> None:
+    def on_files(self, files: Files, config: Config) -> None:
         # Store files to allow inspecting Markdown files in later stages.
         self.files.update({os.path.normpath(file.url): file for file in files})
 
