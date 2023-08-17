@@ -223,7 +223,7 @@ class HtmlProoferPlugin(BasePlugin):
             search_path = os.path.normpath(url[1:])
         else:
             # Handle relative links by concatenating the source dir with the destination path
-            src_dir = urllib.parse.quote(str(pathlib.Path(src_path).parent))
+            src_dir = urllib.parse.quote(str(pathlib.Path(src_path).parent), safe='/\\')
             search_path = os.path.normpath(str(pathlib.Path(src_dir) / pathlib.Path(url)))
 
         try:
