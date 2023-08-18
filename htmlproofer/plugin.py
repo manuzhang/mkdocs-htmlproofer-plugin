@@ -87,7 +87,7 @@ class HtmlProoferPlugin(BasePlugin):
         if self.config['raise_error_after_finish'] and self.invalid_links:
             raise PluginError("Invalid links present.")
 
-    def on_page_markdown(self, markdown: str, page: Page, config: Config, files: Files) -> None:
+    def on_files(self, files: Files, config: Config) -> None:
         # Store files to allow inspecting Markdown files in later stages.
         self.files.update({os.path.normpath(file.url): file for file in files})
 
@@ -223,7 +223,8 @@ class HtmlProoferPlugin(BasePlugin):
             search_path = os.path.normpath(url[1:])
         else:
             # Handle relative links by concatenating the source dir with the destination path
-            search_path = os.path.normpath(str(pathlib.Path(src_path).parent / pathlib.Path(url)))
+            src_dir = urllib.parse.quote(str(pathlib.Path(src_path).parent), safe='/\\')
+            search_path = os.path.normpath(str(pathlib.Path(src_dir) / pathlib.Path(url)))
 
         try:
             return files[search_path]

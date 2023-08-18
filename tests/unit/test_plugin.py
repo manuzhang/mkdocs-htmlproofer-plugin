@@ -240,9 +240,12 @@ def test_get_external_url__unknown_scheme(scheme):
 def test_get_url_status__local_page(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
     page1_page = Mock(spec=Page, markdown='# Page One\n## Sub Heading\nContent')
+    special_char_page = Mock(spec=Page, markdown='# Heading éèà\n## Sub Heading éèà\nContent')
     files = {os.path.normpath(file.url): file for file in Files([
         Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
         Mock(spec=File, src_path='page1.md', dest_path='page1.html', url='page1.html', page=page1_page),
+        Mock(spec=File, src_path='Dir éèà/éèà.md', dest_path='Dir éèà/éèà.html',
+             url='Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0.html', page=special_char_page),
     ])}
 
     assert plugin.get_url_status('index.html', 'page1.md', set(), files, False) == 0
@@ -255,6 +258,10 @@ def test_get_url_status__local_page(plugin):
 
     assert plugin.get_url_status('page2.html', 'page1.md', set(), files, False) == 404
     assert plugin.get_url_status('page2.html#heading', 'page1.md', set(), files, False) == 404
+
+    assert plugin.get_url_status('Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0.html#sub-heading-eea',
+                                 'page1.md', set(), files, False) == 0
+    assert plugin.get_url_status('%C3%A9%C3%A8%C3%A0.html#sub-heading-eea', 'Dir éèà/page3.md', set(), files, False) == 0
 
 
 def test_get_url_status__non_markdown_page(plugin):
