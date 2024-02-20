@@ -10,7 +10,7 @@ plugins:
         raise_error_excludes:
           504: ['*']
           404: [
-            'https://www.mkdocs.org/user-guide/plugin',
+            'https://www.mkdocs.org/user-guide/*',
             '#acknowledge',
             '../index.html#BAD_ANCHOR',
             'page2.html#BAD_ANCHOR',
