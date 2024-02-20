@@ -109,20 +109,13 @@ class HtmlProoferPlugin(BasePlugin):
         for a in soup.find_all('a', href=True):
             url = a['href']
 
-            ignore = False
-            for ignore_url_exp in self.config['ignore_urls']:
-                if fnmatch.fnmatch(url, ignore_url_exp):
-                    ignore = True
-                    break
-            if ignore:
+            if any(fnmatch.fnmatch(url, ignore_url) for ignore_url in self.config['ignore_urls']):
                 if self.config['warn_on_ignored_urls']:
                     log_warning(f"ignoring URL {url} from {page.file.src_path}")
-                continue
-
-            url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
-
-            if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
-                self.report_invalid_url(url, url_status, page.file.src_path)
+            else:
+                url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
+                if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
+                    self.report_invalid_url(url, url_status, page.file.src_path)
 
     def report_invalid_url(self, url, url_status, src_path):
         error = f'invalid url - {url} [{url_status}] [{src_path}]'
@@ -300,7 +293,7 @@ class HtmlProoferPlugin(BasePlugin):
     def is_error(config: Config, url: str, url_status: int) -> bool:
         excludes = config['raise_error_excludes'].get(url_status, [])
 
-        if '*' in excludes or url in excludes:
+        if any(fnmatch.fnmatch(url, exclude_url) for exclude_url in excludes):
             return False
-
-        return True
+        else:
+            return True

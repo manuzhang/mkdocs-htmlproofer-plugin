@@ -78,7 +78,7 @@ plugins:
 ### `raise_error_excludes`
 
 When specifying `raise_error: True` or `raise_error_after_finish: True`, it is possible to ignore errors
-for combinations of urls (`'*'` means all urls) and status codes with `raise_error_excludes`.
+for combinations of URLs and status codes with `raise_error_excludes`. Each URL supports unix style wildcards `*`, `[]`, `?`, etc.
 
 ```yaml
 plugins:
@@ -87,14 +87,14 @@ plugins:
       raise_error: True
       raise_error_excludes:
         504: ['https://www.mkdocs.org/']
-        404: ['https://github.com/manuzhang/mkdocs-htmlproofer-plugin']
+        404: ['https://github.com/manuzhang/*']
         400: ['*']
 ```
 
 ### `ignore_urls`
 
 Avoid validating the given list of URLs by ignoring them altogether. Each URL in the
-list support unix style wildcards `*`, `[]`, `?`, etc.
+list supports unix style wildcards `*`, `[]`, `?`, etc.
 
 Unlike `raise_error_excludes`, ignored URLs will not be fetched at all.
 
@@ -164,4 +164,4 @@ More information about plugins in the [MkDocs documentation](http://www.mkdocs.o
 
 ## Acknowledgement
 
-This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/rosscdh/mkdocs-markdownextradata-plugin) project and the [Finding and Fixing Website Link Rot with Python, BeautifulSoup and Requests](https://www.twilio.com/blog/2018/07/find-fix-website-link-rot-python-beautifulsoup-requests.html) article. 
+This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/rosscdh/mkdocs-markdownextradata-plugin) project and the [Finding and Fixing Website Link Rot with Python, BeautifulSoup and Requests](https://www.twilio.com/en-us/blog/find-fix-website-link-rot-python-beautifulsoup-requests-html) article. 
