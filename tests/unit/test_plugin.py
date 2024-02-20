@@ -1,9 +1,8 @@
-import os.path
 from unittest.mock import Mock, patch
 
 from mkdocs.config import Config
 from mkdocs.exceptions import PluginError
-from mkdocs.structure.files import File, Files
+from mkdocs.structure.files import File
 from mkdocs.structure.pages import Page
 import mkdocs.utils
 import pytest
@@ -22,7 +21,7 @@ def plugin():
 
 @pytest.fixture
 def empty_files():
-    return {}
+    return []
 
 
 @pytest.fixture(autouse=True)
@@ -241,12 +240,12 @@ def test_get_url_status__local_page(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
     page1_page = Mock(spec=Page, markdown='# Page One\n## Sub Heading\nContent')
     special_char_page = Mock(spec=Page, markdown='# Heading éèà\n## Sub Heading éèà\nContent')
-    files = {os.path.normpath(file.url): file for file in Files([
+    files = [
         Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
         Mock(spec=File, src_path='page1.md', dest_path='page1.html', url='page1.html', page=page1_page),
         Mock(spec=File, src_path='Dir éèà/éèà.md', dest_path='Dir éèà/éèà.html',
              url='Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0.html', page=special_char_page),
-    ])}
+    ]
 
     assert plugin.get_url_status('index.html', 'page1.md', set(), files, False) == 0
     assert plugin.get_url_status('index.html#heading', 'page1.md', set(), files, False) == 0
@@ -266,10 +265,10 @@ def test_get_url_status__local_page(plugin):
 
 def test_get_url_status__non_markdown_page(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
-    files = {os.path.normpath(file.url): file for file in Files([
+    files = [
         Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
         Mock(spec=File, src_path='drawing.svg', dest_path='drawing.svg', url='drawing.svg', page=None),
-    ])}
+    ]
 
     assert plugin.get_url_status('drawing.svg', 'index.md', set(), files, False) == 0
     assert plugin.get_url_status('/drawing.svg', 'index.md', set(), files, False) == 0
@@ -282,7 +281,7 @@ def test_get_url_status__local_page_nested(plugin):
     nested1_sibling_page = Mock(spec=Page, markdown='# Nested Sibling')
     nested2_page = Mock(spec=Page, markdown='# Nested\n## Nested Two\nContent')
     nested2_sibling_page = Mock(spec=Page, markdown='# Nested Sibling')
-    files = {os.path.normpath(file.url): file for file in Files([
+    files = [
         Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
         Mock(
             spec=File,
@@ -312,7 +311,7 @@ def test_get_url_status__local_page_nested(plugin):
             url='foo/baz/sibling.html',
             page=nested2_sibling_page
         ),
-    ])}
+    ]
 
     assert plugin.get_url_status('nested.html#nested-one', 'foo/bar/sibling.md', set(), files, False) == 0
     assert plugin.get_url_status('nested.html#nested-two', 'foo/bar/sibling.md', set(), files, False) == 404
@@ -331,7 +330,7 @@ def test_get_url_status__excluded_non_existing_relative_url__no_warning(log_warn
     url_status = 404
     url = "non-existing.html"
     src_path = "index.md"
-    files = {}
+    files = []
     plugin.config['raise_error_excludes'][url_status] = [url]
 
     status = plugin.get_url_status(url, src_path, set(), files, False)
@@ -347,11 +346,10 @@ def test_get_url_status__excluded_existing_relative_url__no_warning(log_warning_
     url = f"{filename}.html"
     src_path = f"{filename}.md"
     existing_page = Mock(spec=Page, markdown='')
-    files = {
-        os.path.normpath(file.url): file for file in Files([
+    files = [
             Mock(spec=File, src_path=src_path, dest_path=url, url=url, page=existing_page)
-        ])
-    }
+        ]
+
     plugin.config['raise_error_excludes'][url_status] = [url]
 
     status = plugin.get_url_status(url, src_path, set(), files, False)
@@ -365,7 +363,7 @@ def test_get_url_status__non_existing_relative_url__warning_and_404(log_warning_
     expected_url_status = 404
     url = "non-existing.html"
     src_path = "index.md"
-    files = {}
+    files = []
 
     status = plugin.get_url_status(url, src_path, set(), files, False)
 
