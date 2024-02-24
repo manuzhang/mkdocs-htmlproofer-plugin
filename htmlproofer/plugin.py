@@ -123,7 +123,7 @@ class HtmlProoferPlugin(BasePlugin):
                 if self.config['warn_on_ignored_urls']:
                     log_warning(f"ignoring URL {url} from {page.file.src_path}")
             else:
-                url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
+                url_status = self.get_url_status(url, page.file.src_path, all_element_ids, opt_files, use_directory_urls)
                 if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
                     self.report_invalid_url(url, url_status, page.file.src_path)
 
