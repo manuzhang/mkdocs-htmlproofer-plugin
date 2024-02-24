@@ -3,7 +3,7 @@ from functools import lru_cache, partial
 import os.path
 import pathlib
 import re
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 import urllib.parse
 import uuid
 
@@ -100,6 +100,13 @@ class HtmlProoferPlugin(BasePlugin):
 
         use_directory_urls = config.data["use_directory_urls"]
 
+        # Optimization: At this point, we have all the files, so we can create
+        # a dictionary for faster lookups. Prior to this point, files are
+        # still being updated so creating a dictionary before now would result
+        # in incorrect values appearing as the key.
+        opt_files = {}
+        opt_files.update({os.path.normpath(file.url): file for file in self.files})
+
         # Optimization: only parse links and headings
         # li, sup are used for footnotes
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup', 'img'))
@@ -154,7 +161,7 @@ class HtmlProoferPlugin(BasePlugin):
             url: str,
             src_path: str,
             all_element_ids: Set[str],
-            files: List[File],
+            files: Dict[str, File],
             use_directory_urls: bool
     ) -> int:
         if any(pat.match(url) for pat in LOCAL_PATTERNS):
@@ -181,7 +188,7 @@ class HtmlProoferPlugin(BasePlugin):
         return 0
 
     @staticmethod
-    def is_url_target_valid(url: str, src_path: str, files: List[File]) -> bool:
+    def is_url_target_valid(url: str, src_path: str, files: Dict[str, File]) -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
@@ -202,7 +209,7 @@ class HtmlProoferPlugin(BasePlugin):
         return True
 
     @staticmethod
-    def find_target_markdown(url: str, src_path: str, files: List[File]) -> Optional[str]:
+    def find_target_markdown(url: str, src_path: str, files: Dict[str, File]) -> Optional[str]:
         """From a built URL, find the original Markdown source from the project that built it."""
 
         file = HtmlProoferPlugin.find_source_file(url, src_path, files)
@@ -211,7 +218,7 @@ class HtmlProoferPlugin(BasePlugin):
         return None
 
     @staticmethod
-    def find_source_file(url: str, src_path: str, files: List[File]) -> Optional[File]:
+    def find_source_file(url: str, src_path: str, files: Dict[str, File]) -> Optional[File]:
         """From a built URL, find the original file from the project that built it."""
 
         if len(url) > 1 and url[0] == '/':
@@ -222,13 +229,9 @@ class HtmlProoferPlugin(BasePlugin):
             src_dir = urllib.parse.quote(str(pathlib.Path(src_path).parent), safe='/\\')
             search_path = os.path.normpath(str(pathlib.Path(src_dir) / pathlib.Path(url)))
 
-        for file in files:
-            # Need to call normpath on the url to get the Windows tests to
-            # pass. This might be required for other platforms as well, but
-            # based on the tests, it seems to be required for Windows only.
-            if os.path.normpath(file.url) == search_path:
-                return file
-        else:
+        try:
+            return files[search_path]
+        except KeyError:
             return None
 
     @staticmethod
