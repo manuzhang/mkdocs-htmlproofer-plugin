@@ -3,7 +3,7 @@ from functools import lru_cache, partial
 import os.path
 import pathlib
 import re
-from typing import Dict, Optional, Set
+from typing import Dict, List, Optional, Set
 import urllib.parse
 import uuid
 
@@ -57,7 +57,7 @@ def log_error(msg, *args, **kwargs):
 
 
 class HtmlProoferPlugin(BasePlugin):
-    files: Dict[str, File]
+    files: List[File]
     invalid_links = False
 
     config_scheme = (
@@ -76,7 +76,7 @@ class HtmlProoferPlugin(BasePlugin):
         self._session.verify = False
         self._session.headers.update(URL_HEADERS)
         self._session.max_redirects = 5
-        self.files = {}
+        self.files = []
         self.scheme_handlers = {
             "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
             "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
@@ -89,13 +89,23 @@ class HtmlProoferPlugin(BasePlugin):
 
     def on_files(self, files: Files, config: Config) -> None:
         # Store files to allow inspecting Markdown files in later stages.
-        self.files.update({os.path.normpath(file.url): file for file in files})
+        # The values in files at this point are not guaranteed to be the same as the ones in the Page objects.
+        # For example, material blog plugin may modify the files after this event.
+        for f in files:
+            self.files.append(f)
 
     def on_post_page(self, output_content: str, page: Page, config: Config) -> None:
         if not self.config['enabled']:
             return
 
         use_directory_urls = config.data["use_directory_urls"]
+
+        # Optimization: At this point, we have all the files, so we can create
+        # a dictionary for faster lookups. Prior to this point, files are
+        # still being updated so creating a dictionary before now would result
+        # in incorrect values appearing as the key.
+        opt_files = {}
+        opt_files.update({os.path.normpath(file.url): file for file in self.files})
 
         # Optimization: only parse links and headings
         # li, sup are used for footnotes
@@ -113,7 +123,7 @@ class HtmlProoferPlugin(BasePlugin):
                 if self.config['warn_on_ignored_urls']:
                     log_warning(f"ignoring URL {url} from {page.file.src_path}")
             else:
-                url_status = self.get_url_status(url, page.file.src_path, all_element_ids, self.files, use_directory_urls)
+                url_status = self.get_url_status(url, page.file.src_path, all_element_ids, opt_files, use_directory_urls)
                 if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
                     self.report_invalid_url(url, url_status, page.file.src_path)
 
