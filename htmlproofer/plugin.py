@@ -98,14 +98,13 @@ class HtmlProoferPlugin(BasePlugin):
         if not self.config['enabled']:
             return
 
-        use_directory_urls = config.data["use_directory_urls"]
-
         # Optimization: At this point, we have all the files, so we can create
         # a dictionary for faster lookups. Prior to this point, files are
         # still being updated so creating a dictionary before now would result
         # in incorrect values appearing as the key.
         opt_files = {}
         opt_files.update({os.path.normpath(file.url): file for file in self.files})
+        opt_files.update({os.path.normpath(file.src_uri): file for file in self.files})
 
         # Optimization: only parse links and headings
         # li, sup are used for footnotes
@@ -123,7 +122,7 @@ class HtmlProoferPlugin(BasePlugin):
                 if self.config['warn_on_ignored_urls']:
                     log_warning(f"ignoring URL {url} from {page.file.src_path}")
             else:
-                url_status = self.get_url_status(url, page.file.src_path, all_element_ids, opt_files, use_directory_urls)
+                url_status = self.get_url_status(url, page.file.src_path, all_element_ids, opt_files)
                 if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
                     self.report_invalid_url(url, url_status, page.file.src_path)
 
@@ -161,8 +160,7 @@ class HtmlProoferPlugin(BasePlugin):
             url: str,
             src_path: str,
             all_element_ids: Set[str],
-            files: Dict[str, File],
-            use_directory_urls: bool
+            files: Dict[str, File]
     ) -> int:
         if any(pat.match(url) for pat in LOCAL_PATTERNS):
             return 0
@@ -174,18 +172,13 @@ class HtmlProoferPlugin(BasePlugin):
             return 0
         if fragment and not path:
             return 0 if url[1:] in all_element_ids else 404
-        elif not use_directory_urls:
-            # use_directory_urls = True injects too many challenges for locating the correct target
-            # Markdown file, so disable target anchor validation in this case. Examples include:
-            # ../..#BAD_ANCHOR style links to index.html and extra ../ inserted into relative
-            # links.
+        else:
             is_valid = self.is_url_target_valid(url, src_path, files)
             url_status = 404
             if not is_valid and self.is_error(self.config, url, url_status):
                 log_warning(f"Unable to locate source file for: {url}")
                 return url_status
             return 0
-        return 0
 
     @staticmethod
     def is_url_target_valid(url: str, src_path: str, files: Dict[str, File]) -> bool:
@@ -225,9 +218,14 @@ class HtmlProoferPlugin(BasePlugin):
             # Convert root/site paths
             search_path = os.path.normpath(url[1:])
         else:
-            # Handle relative links by concatenating the source dir with the destination path
-            src_dir = urllib.parse.quote(str(pathlib.Path(src_path).parent), safe='/\\')
-            search_path = os.path.normpath(str(pathlib.Path(src_dir) / pathlib.Path(url)))
+            # Handle relative links by looking up the destination url for the
+            # src_path and getting the parent directory.
+            try:
+                dest_uri = files[src_path].dest_uri
+                src_dir = urllib.parse.quote(str(pathlib.Path(dest_uri).parent), safe='/\\')
+                search_path = os.path.normpath(str(pathlib.Path(src_dir) / pathlib.Path(url)))
+            except KeyError:
+                return None
 
         try:
             return files[search_path]

@@ -28,12 +28,6 @@ plugins:
     - htmlproofer
 ```
 
-To enable cross-page anchor validation, you must set `use_directory_urls = False` in `mkdocs.yml`:
-
-```yaml
-use_directory_urls: False
-```
-
 ## Configuring
 
 ### `enabled`
@@ -147,11 +141,11 @@ plugins:
 
 ## Compatibility with `attr_list` extension
 
-If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown. 
+If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown.
 This can be useful for multilingual documentation to keep anchors as language neutral permalinks in all languages.
 
 * A sample for a heading `# Grüße {#greetings}` (the slugified generated anchor `Gre` is overwritten with `greetings`).
-* This also works for images `this is a nice image [](foo-bar.png){#nice-image}` 
+* This also works for images `this is a nice image [](foo-bar.png){#nice-image}`
 * And generall for paragraphs:
 ```markdown
 Listing: This is noteworthy.
@@ -164,4 +158,4 @@ More information about plugins in the [MkDocs documentation](http://www.mkdocs.o
 
 ## Acknowledgement
 
-This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/rosscdh/mkdocs-markdownextradata-plugin) project and the [Finding and Fixing Website Link Rot with Python, BeautifulSoup and Requests](https://www.twilio.com/en-us/blog/find-fix-website-link-rot-python-beautifulsoup-requests-html) article. 
+This work is based on the [mkdocs-markdownextradata-plugin](https://github.com/rosscdh/mkdocs-markdownextradata-plugin) project and the [Finding and Fixing Website Link Rot with Python, BeautifulSoup and Requests](https://www.twilio.com/en-us/blog/find-fix-website-link-rot-python-beautifulsoup-requests-html) article.
