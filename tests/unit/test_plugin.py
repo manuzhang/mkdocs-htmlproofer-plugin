@@ -115,7 +115,7 @@ def test_on_post_page__plugin_disabled():
     ),
 )
 def test_get_url_status__ignore_local_servers(plugin, empty_files, url):
-    assert plugin.get_url_status(url, 'src/path.md', set(), empty_files, False) == 0
+    assert plugin.get_url_status(url, 'src/path.md', set(), empty_files) == 0
 
 
 @pytest.mark.parametrize(
@@ -126,7 +126,7 @@ def test_get_url_status(validate_external: bool):
     plugin.load_config({'validate_external_urls': validate_external})
 
     def get_url():
-        return plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files, False)
+        return plugin.get_url_status('https://google.com', 'src/path.md', set(), empty_files)
 
     if validate_external:
         with pytest.raises(Exception):
@@ -172,9 +172,9 @@ def test_contains_anchor(plugin, markdown, anchor, expected):
 
 
 def test_get_url_status__same_page_anchor(plugin, empty_files):
-    assert plugin.get_url_status('#ref', 'src/path.md', {'ref'}, empty_files, False) == 0
-    assert plugin.get_url_status('##ref', 'src/path.md', {'ref'}, empty_files, False) == 404
-    assert plugin.get_url_status('#ref', 'src/path.md', set(), empty_files, False) == 404
+    assert plugin.get_url_status('#ref', 'src/path.md', {'ref'}, empty_files) == 0
+    assert plugin.get_url_status('##ref', 'src/path.md', {'ref'}, empty_files) == 404
+    assert plugin.get_url_status('#ref', 'src/path.md', set(), empty_files) == 404
 
 
 @pytest.mark.parametrize(
@@ -195,7 +195,7 @@ def test_get_url_status__external(plugin, empty_files, url):
 
     with patch.object(HtmlProoferPlugin, "get_external_url") as mock_get_ext_url:
         mock_get_ext_url.return_value = expected_status
-        status = plugin.get_url_status(url, src_path, set(), empty_files, False)
+        status = plugin.get_url_status(url, src_path, set(), empty_files)
 
     mock_get_ext_url.assert_called_once_with(url, scheme, src_path)
     assert status == expected_status
@@ -241,39 +241,64 @@ def test_get_url_status__local_page(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
     page1_page = Mock(spec=Page, markdown='# Page One\n## Sub Heading\nContent')
     special_char_page = Mock(spec=Page, markdown='# Heading éèà\n## Sub Heading éèà\nContent')
-    files = {os.path.normpath(file.url): file for file in Files([
-        Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
-        Mock(spec=File, src_path='page1.md', dest_path='page1.html', url='page1.html', page=page1_page),
+    mock_files = Files([
+        Mock(spec=File, src_path='index.md', dest_path='index.html',
+             dest_uri='index.html', url='index.html', src_uri='index.md',
+             page=index_page),
+        Mock(spec=File, src_path='page1.md', dest_path='page1.html',
+             dest_uri='page1.html', url='page1.html', src_uri='page1.md',
+             page=page1_page),
         Mock(spec=File, src_path='Dir éèà/éèà.md', dest_path='Dir éèà/éèà.html',
-             url='Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0.html', page=special_char_page),
-    ])}
+             dest_uri='Dir éèà/éèà.html',
+             url='Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0.html',
+             src_uri='Dir éèà/éèà.md', page=special_char_page),
+        Mock(spec=File, src_path='Dir éèà/page1.md', dest_path='Dir éèà/page1.html',
+             dest_uri='Dir éèà/page1.html',
+             url='Dir%20%C3%A9%C3%A8%C3%A0/page1.html',
+             src_uri='Dir%20%C3%A9%C3%A8%C3%A0/page1.md',
+             page=special_char_page),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
 
-    assert plugin.get_url_status('index.html', 'page1.md', set(), files, False) == 0
-    assert plugin.get_url_status('index.html#heading', 'page1.md', set(), files, False) == 0
-    assert plugin.get_url_status('index.html#bad-heading', 'page1.md', set(), files, False) == 404
+    assert plugin.get_url_status('index.html', 'page1.md', set(), files) == 0
+    assert plugin.get_url_status('index.html#heading', 'page1.md', set(), files) == 0
+    assert plugin.get_url_status('index.html#bad-heading', 'page1.md', set(), files) == 404
 
-    assert plugin.get_url_status('page1.html', 'page1.md', set(), files, False) == 0
-    assert plugin.get_url_status('page1.html#sub-heading', 'page1.md', set(), files, False) == 0
-    assert plugin.get_url_status('page1.html#heading', 'page1.md', set(), files, False) == 404
+    assert plugin.get_url_status('page1.html', 'page1.md', set(), files) == 0
+    assert plugin.get_url_status('page1.html#sub-heading', 'page1.md', set(), files) == 0
+    assert plugin.get_url_status('page1.html#heading', 'page1.md', set(), files) == 404
 
-    assert plugin.get_url_status('page2.html', 'page1.md', set(), files, False) == 404
-    assert plugin.get_url_status('page2.html#heading', 'page1.md', set(), files, False) == 404
+    assert plugin.get_url_status('page2.html', 'page1.md', set(), files) == 404
+    assert plugin.get_url_status('page2.html#heading', 'page1.md', set(), files) == 404
 
-    assert plugin.get_url_status('Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0.html#sub-heading-eea',
-                                 'page1.md', set(), files, False) == 0
-    assert plugin.get_url_status('%C3%A9%C3%A8%C3%A0.html#sub-heading-eea', 'Dir éèà/page3.md', set(), files, False) == 0
+    assert plugin.get_url_status(
+        'Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0.html#sub-heading-eea',
+        'page1.md', set(), files) == 0
+    assert plugin.get_url_status(
+        '%C3%A9%C3%A8%C3%A0.html#sub-heading-eea',
+        'Dir%20%C3%A9%C3%A8%C3%A0/page1.md',
+        set(), files) == 0
 
 
 def test_get_url_status__non_markdown_page(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
-    files = {os.path.normpath(file.url): file for file in Files([
-        Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
-        Mock(spec=File, src_path='drawing.svg', dest_path='drawing.svg', url='drawing.svg', page=None),
-    ])}
+    mock_files = Files([
+        Mock(spec=File, src_path='index.md', dest_path='index.html',
+             dest_uri='index.html', url='index.html', src_uri='index.md',
+             page=index_page),
+        Mock(spec=File, src_path='drawing.svg', dest_path='drawing.svg',
+             dest_uri='index.html', url='drawing.svg', src_uri='drawing.svg',
+             page=None),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
 
-    assert plugin.get_url_status('drawing.svg', 'index.md', set(), files, False) == 0
-    assert plugin.get_url_status('/drawing.svg', 'index.md', set(), files, False) == 0
-    assert plugin.get_url_status('not-existing.svg', 'index.md', set(), files, False) == 404
+    assert plugin.get_url_status('drawing.svg', 'index.md', set(), files) == 0
+    assert plugin.get_url_status('/drawing.svg', 'index.md', set(), files) == 0
+    assert plugin.get_url_status('not-existing.svg', 'index.md', set(), files) == 404
 
 
 def test_get_url_status__local_page_nested(plugin):
@@ -282,48 +307,67 @@ def test_get_url_status__local_page_nested(plugin):
     nested1_sibling_page = Mock(spec=Page, markdown='# Nested Sibling')
     nested2_page = Mock(spec=Page, markdown='# Nested\n## Nested Two\nContent')
     nested2_sibling_page = Mock(spec=Page, markdown='# Nested Sibling')
-    files = {os.path.normpath(file.url): file for file in Files([
-        Mock(spec=File, src_path='index.md', dest_path='index.html', url='index.html', page=index_page),
+    mock_files = Files([
+        Mock(
+            spec=File,
+            src_path='index.md',
+            dest_path='index.html',
+            dest_uri='index.html',
+            url='index.html',
+            src_uri='index.md',
+            page=index_page),
         Mock(
             spec=File,
             src_path='foo/bar/nested.md',
             dest_path='foo/bar/nested.html',
+            dest_uri='foo/bar/nested.html',
             url='foo/bar/nested.html',
+            src_uri='foo/bar/nested.md',
             page=nested1_page
         ),
         Mock(
             spec=File,
             src_path='foo/bar/sibling.md',
             dest_path='foo/bar/sibling.html',
+            dest_uri='foo/bar/sibling.html',
             url='foo/bar/sibling.html',
+            src_uri='foo/bar/sibling.md',
             page=nested1_sibling_page
         ),
         Mock(
             spec=File,
             src_path='foo/baz/nested.md',
             dest_path='foo/baz/nested.html',
+            dest_uri='foo/baz/nested.html',
             url='foo/baz/nested.html',
+            src_uri='foo/baz/nested.md',
             page=nested2_page
         ),
         Mock(
             spec=File,
             src_path='foo/baz/sibling.md',
             dest_path='foo/baz/sibling.html',
+            dest_uri='foo/baz/sibling.html',
             url='foo/baz/sibling.html',
+            src_uri='foo/baz/sibling.md',
             page=nested2_sibling_page
         ),
-    ])}
+    ])
 
-    assert plugin.get_url_status('nested.html#nested-one', 'foo/bar/sibling.md', set(), files, False) == 0
-    assert plugin.get_url_status('nested.html#nested-two', 'foo/bar/sibling.md', set(), files, False) == 404
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
 
-    assert plugin.get_url_status('nested.html#nested-two', 'foo/baz/sibling.md', set(), files, False) == 0
-    assert plugin.get_url_status('nested.html#nested-one', 'foo/baz/sibling.md', set(), files, False) == 404
+    assert plugin.get_url_status('nested.html#nested-one', 'foo/bar/sibling.md', set(), files) == 0
+    assert plugin.get_url_status('nested.html#nested-two', 'foo/bar/sibling.md', set(), files) == 404
 
-    assert plugin.get_url_status('foo/bar/nested.html#nested-one', 'index.md', set(), files, False) == 0
-    assert plugin.get_url_status('foo/baz/nested.html#nested-two', 'index.md', set(), files, False) == 0
+    assert plugin.get_url_status('nested.html#nested-two', 'foo/baz/sibling.md', set(), files) == 0
+    assert plugin.get_url_status('nested.html#nested-one', 'foo/baz/sibling.md', set(), files) == 404
 
-    assert plugin.get_url_status('/index.html', 'foo/baz/sibling.md', set(), files, False) == 0
+    assert plugin.get_url_status('foo/bar/nested.html#nested-one', 'index.md', set(), files) == 0
+    assert plugin.get_url_status('foo/baz/nested.html#nested-two', 'index.md', set(), files) == 0
+
+    assert plugin.get_url_status('/index.html', 'foo/baz/sibling.md', set(), files) == 0
 
 
 @patch.object(htmlproofer.plugin, "log_warning", autospec=True)
@@ -334,7 +378,7 @@ def test_get_url_status__excluded_non_existing_relative_url__no_warning(log_warn
     files = {}
     plugin.config['raise_error_excludes'][url_status] = [url]
 
-    status = plugin.get_url_status(url, src_path, set(), files, False)
+    status = plugin.get_url_status(url, src_path, set(), files)
 
     log_warning_mock.assert_not_called()
     assert 0 == status
@@ -349,12 +393,12 @@ def test_get_url_status__excluded_existing_relative_url__no_warning(log_warning_
     existing_page = Mock(spec=Page, markdown='')
     files = {
         os.path.normpath(file.url): file for file in Files([
-            Mock(spec=File, src_path=src_path, dest_path=url, url=url, page=existing_page)
+            Mock(spec=File, src_path=src_path, dest_path=url, dest_uri=url, url=url, src_uri=src_path, page=existing_page)
         ])
     }
     plugin.config['raise_error_excludes'][url_status] = [url]
 
-    status = plugin.get_url_status(url, src_path, set(), files, False)
+    status = plugin.get_url_status(url, src_path, set(), files)
 
     log_warning_mock.assert_not_called()
     assert 0 == status
@@ -367,7 +411,7 @@ def test_get_url_status__non_existing_relative_url__warning_and_404(log_warning_
     src_path = "index.md"
     files = {}
 
-    status = plugin.get_url_status(url, src_path, set(), files, False)
+    status = plugin.get_url_status(url, src_path, set(), files)
 
     log_warning_mock.assert_called_once()
     assert expected_url_status == status

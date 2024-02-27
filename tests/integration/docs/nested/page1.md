@@ -8,7 +8,7 @@ you can either link to a local file without or with an anchor.
 * [Main Page](../index.md)
 * [Sub-Page](./page2.md)
 * <figure markdown>
-  <a href="../assets/hello-world.drawio.svg">
+  <a href="/assets/hello-world.drawio.svg">
     ![Image](../assets/hello-world.drawio.svg)
   </a>
 </figure>
@@ -27,6 +27,6 @@ But allows valid anchors such as
 
 ## Image Link absolute/relative
 
-<a href="../assets/hello-world.drawio.svg">![test](../assets/hello-world.drawio.svg)</a>
+<a href="/assets/hello-world.drawio.svg">![test](../assets/hello-world.drawio.svg)</a>
 
 <a href="/assets/hello-world.drawio.svg">![test](/assets/hello-world.drawio.svg)</a>
