@@ -146,7 +146,12 @@ class HtmlProoferPlugin(BasePlugin):
     @lru_cache(maxsize=1000)
     def resolve_web_scheme(self, url: str) -> int:
         try:
-            response = self._session.get(url, timeout=URL_TIMEOUT)
+            response = self._session.get(url, timeout=URL_TIMEOUT, stream=True)
+
+            # Download the entire contents as to not break previous behaviour.
+            for _ in response.iter_content(chunk_size=1024):
+                pass
+
             return response.status_code
         except requests.exceptions.Timeout:
             return 504

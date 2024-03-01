@@ -78,8 +78,10 @@ def test_on_post_page(
     })
 
     # Always raise a 500 error
-    mock_requests.side_effect = [Mock(spec=Response, status_code=500)]
     link_to_500 = '<a href="https://google.com"><a/>'
+    iter_content = Mock()
+    iter_content.side_effect = link_to_500
+    mock_requests.side_effect = [Mock(spec=Response, status_code=500, iter_content=iter_content)]
 
     plugin.files = empty_files
     page = Mock(
