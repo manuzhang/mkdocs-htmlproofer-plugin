@@ -139,6 +139,17 @@ plugins:
       validate_rendered_template: True
 ```
 
+### `skip_downloads`
+
+Optionally skip downloading of a remote URLs content via GET request. This can
+considerably reduce the time taken to validate URLs.
+
+```yaml
+plugins:
+  - htmlproofer:
+      skip_downloads: True
+```
+
 ## Compatibility with `attr_list` extension
 
 If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown.
