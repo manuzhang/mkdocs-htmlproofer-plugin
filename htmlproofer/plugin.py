@@ -285,17 +285,10 @@ class HtmlProoferPlugin(BasePlugin):
     def bad_url(url_status: int) -> bool:
         if url_status == -1:
             return True
-        elif url_status == 401 or url_status == 403:
-            return False
-        elif url_status in (503, 504):
-            # Usually transient
-            return False
-        elif url_status == 999:
-            # Returned by some websites (e.g. LinkedIn) that think you're crawling them.
-            return False
         elif url_status >= 400:
             return True
-        return False
+        else:
+            return False
 
     @staticmethod
     def is_error(config: Config, url: str, url_status: int) -> bool:
