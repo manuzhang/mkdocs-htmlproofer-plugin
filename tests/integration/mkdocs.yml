@@ -16,3 +16,4 @@ plugins:
             'page2.html#BAD_ANCHOR',
             '../../../tests',
           ]
+        skip_downloads: True

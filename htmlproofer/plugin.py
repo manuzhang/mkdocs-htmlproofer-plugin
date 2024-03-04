@@ -65,6 +65,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('raise_error', config_options.Type(bool, default=False)),
         ('raise_error_after_finish', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
+        ('skip_downloads', config_options.Type(bool, default=False)),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
         ('ignore_urls', config_options.Type(list, default=[])),
@@ -146,7 +147,13 @@ class HtmlProoferPlugin(BasePlugin):
     @lru_cache(maxsize=1000)
     def resolve_web_scheme(self, url: str) -> int:
         try:
-            response = self._session.get(url, timeout=URL_TIMEOUT)
+            response = self._session.get(url, timeout=URL_TIMEOUT, stream=True)
+
+            if self.config['skip_downloads'] is False:
+                # Download the entire contents as to not break previous behaviour.
+                for _ in response.iter_content(chunk_size=1024):
+                    pass
+
             return response.status_code
         except requests.exceptions.Timeout:
             return 504
