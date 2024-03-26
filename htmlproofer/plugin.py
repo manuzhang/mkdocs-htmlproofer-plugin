@@ -194,18 +194,20 @@ class HtmlProoferPlugin(BasePlugin):
             return True
 
         url_target, _, optional_anchor = match.groups()
-        _, extension = os.path.splitext(url_target)
-        if extension == ".html":
-            # URL is a link to another local Markdown file that may include an anchor.
-            target_markdown = HtmlProoferPlugin.find_target_markdown(url_target, src_path, files)
-            if target_markdown is None:
-                # The corresponding Markdown page was not found.
-                return False
-            if optional_anchor and not HtmlProoferPlugin.contains_anchor(target_markdown, optional_anchor):
-                # The corresponding Markdown header for this anchor was not found.
-                return False
-        elif HtmlProoferPlugin.find_source_file(url_target, src_path, files) is None:
+        source_file = HtmlProoferPlugin.find_source_file(url_target, src_path, files)
+        if source_file is None:
             return False
+
+        # If there's an anchor (fragment) on the link, we try to find it in the source_file
+        if optional_anchor:
+            _, extension = os.path.splitext(source_file.src_uri)
+            # Currently only Markdown-based pages are supported, but conceptually others could be added below
+            if extension == ".md":
+                if source_file.page is None or source_file.page.markdown is None:
+                    return False
+                if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, optional_anchor):
+                    return False
+
         return True
 
     @staticmethod
