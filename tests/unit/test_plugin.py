@@ -284,6 +284,51 @@ def test_get_url_status__local_page(plugin):
         set(), files) == 0
 
 
+def test_get_url_status__local_page_with_directory_urls(plugin):
+    index_page = Mock(spec=Page, markdown='# Heading\nContent')
+    page1_page = Mock(spec=Page, markdown='# Page One\n## Sub Heading\nContent')
+    special_char_page = Mock(spec=Page, markdown='# Heading éèà\n## Sub Heading éèà\nContent')
+    mock_files = Files([
+        Mock(spec=File, src_path='index.md', dest_path='index/index.html',
+             dest_uri='index/index.html', url='index/', src_uri='index.md',
+             page=index_page),
+        Mock(spec=File, src_path='page1.md', dest_path='page1/index.html',
+             dest_uri='page1/index.html', url='page1/', src_uri='page1.md',
+             page=page1_page),
+        Mock(spec=File, src_path='Dir éèà/éèà.md', dest_path='Dir éèà/éèà/index.html',
+             dest_uri='Dir éèà/éèà/index.html',
+             url='Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0/',
+             src_uri='Dir éèà/éèà.md', page=special_char_page),
+        Mock(spec=File, src_path='Dir éèà/page1.md', dest_path='Dir éèà/page1/index.html',
+             dest_uri='Dir éèà/page1/index.html',
+             url='Dir%20%C3%A9%C3%A8%C3%A0/page1/',
+             src_uri='Dir%20%C3%A9%C3%A8%C3%A0/page1.md',
+             page=special_char_page),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
+
+    assert plugin.get_url_status('../index/', 'page1.md', set(), files) == 0
+    assert plugin.get_url_status('../index/#heading', 'page1.md', set(), files) == 0
+    assert plugin.get_url_status('../index/#bad-heading', 'page1.md', set(), files) == 404
+
+    assert plugin.get_url_status('../page1/', 'page1.md', set(), files) == 0
+    assert plugin.get_url_status('../page1/#sub-heading', 'page1.md', set(), files) == 0
+    assert plugin.get_url_status('../page1/#heading', 'page1.md', set(), files) == 404
+
+    assert plugin.get_url_status('../page2/', 'page1.md', set(), files) == 404
+    assert plugin.get_url_status('../page2/#heading', 'page1.md', set(), files) == 404
+
+    assert plugin.get_url_status(
+        '../Dir%20%C3%A9%C3%A8%C3%A0/%C3%A9%C3%A8%C3%A0/#sub-heading-eea',
+        'page1.md', set(), files) == 0
+    assert plugin.get_url_status(
+        '../%C3%A9%C3%A8%C3%A0/#sub-heading-eea',
+        'Dir%20%C3%A9%C3%A8%C3%A0/page1.md',
+        set(), files) == 0
+
+
 def test_get_url_status__non_markdown_page(plugin):
     index_page = Mock(spec=Page, markdown='# Heading\nContent')
     mock_files = Files([
