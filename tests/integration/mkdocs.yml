@@ -14,6 +14,8 @@ plugins:
             '#acknowledge',
             '../index.html#BAD_ANCHOR',
             'page2.html#BAD_ANCHOR',
+           '../../#BAD_ANCHOR',  # if use_directory_urls=True
+            '../page2/#BAD_ANCHOR',  # if use_directory_urls=True
             '../../../tests',
           ]
         skip_downloads: True

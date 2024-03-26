@@ -19,11 +19,14 @@ This plugin can detect invalid anchor links to another page, such as
 [Acknowledgement](../index.md#BAD_ANCHOR)
 or to a nested page
 [Invalid Anchor](./page2.md#BAD_ANCHOR).
+It should also detect links to pages in the same directory without './'
+[Invalid Anchor](page2.md#BAD_ANCHOR).
 
 But allows valid anchors such as
 [Main Page](../index.md#mkdocs-htmlproofer-plugin),
-[Table of Contents](../index.md#table-of-contents), and
-[Emoji Anchor](./page2.md#title-with-emojis).
+[Table of Contents](../index.md#table-of-contents),
+[Emoji Anchor](./page2.md#title-with-emojis), and
+[Good Heading](page2.md#good-heading).
 
 ## Image Link absolute/relative
 
