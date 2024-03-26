@@ -338,6 +338,9 @@ def test_get_url_status__non_markdown_page(plugin):
         Mock(spec=File, src_path='drawing.svg', dest_path='drawing.svg',
              dest_uri='index.html', url='drawing.svg', src_uri='drawing.svg',
              page=None),
+        Mock(spec=File, src_path='page.html', dest_path='page.html',
+             dest_uri='page.html', url='page.html', src_uri='page.html',
+             page=None),
     ])
     files = {}
     files.update({os.path.normpath(file.url): file for file in mock_files})
@@ -346,6 +349,9 @@ def test_get_url_status__non_markdown_page(plugin):
     assert plugin.get_url_status('drawing.svg', 'index.md', set(), files) == 0
     assert plugin.get_url_status('/drawing.svg', 'index.md', set(), files) == 0
     assert plugin.get_url_status('not-existing.svg', 'index.md', set(), files) == 404
+
+    assert plugin.get_url_status('page.html', 'index.md', set(), files) == 0
+    assert plugin.get_url_status('page.html#heading', 'index.md', set(), files) == 0  # no validation for non-markdown pages
 
 
 def test_get_url_status__local_page_nested(plugin):
