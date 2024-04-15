@@ -116,9 +116,10 @@ class HtmlProoferPlugin(BasePlugin):
 
         all_element_ids = set(tag['id'] for tag in soup.select('[id]'))
         all_element_ids.add('')  # Empty anchor is commonly used, but not real
-        for a in soup.find_all('a', href=True):
-            url = a['href']
 
+        urls = set(a['href'] for a in soup.find_all('a', href=True)) | set(img['src'] for img in soup.find_all('img'))
+
+        for url in urls:
             if any(fnmatch.fnmatch(url, ignore_url) for ignore_url in self.config['ignore_urls']):
                 if self.config['warn_on_ignored_urls']:
                     log_warning(f"ignoring URL {url} from {page.file.src_path}")
