@@ -108,6 +108,21 @@ def test_on_post_page__plugin_disabled():
     plugin.on_post_page('<a href="https://google.com"><a/>', Mock(spec=Page), Mock(spec=Config))
 
 
+def test_on_post_page__img():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'validate_rendered_template': True,
+        'raise_error': True,
+    })
+    page = Mock(
+        spec=Page,
+        file=Mock(spec=File, src_path='blah.md'),
+        content='',
+    )
+    with pytest.raises(PluginError):
+        plugin.on_post_page('<img src="not-existing.png" />', page, Mock(spec=Config))
+
+
 @pytest.mark.parametrize(
     'url',
     (
