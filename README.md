@@ -4,6 +4,8 @@
 
 *A [MkDocs](https://www.mkdocs.org/) plugin that validates URLs, including anchors, in rendered html files*.
 
+> Note: [MkDocs 1.6+ supports native validation of anchors](https://www.mkdocs.org/user-guide/configuration/#validation).
+
 ## Installation
 
 0. Prerequisites
