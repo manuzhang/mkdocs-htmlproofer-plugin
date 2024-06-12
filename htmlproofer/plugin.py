@@ -152,7 +152,7 @@ class HtmlProoferPlugin(BasePlugin):
 
             if self.config['skip_downloads'] is False:
                 # Download the entire contents as to not break previous behaviour.
-                for _ in response.iter_content(chunk_size=1024):
+                for _ in response.iter_content(chunk_size=1024 * 1024):
                     pass
 
             return response.status_code
