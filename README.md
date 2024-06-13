@@ -119,6 +119,21 @@ plugins:
       warn_on_ignored_urls: true
 ```
 
+### `ignore_pages`
+
+Avoid validating the URLs on the given list of markdown pages by ignoring them altogether.
+Each page in the list supports unix style wildcards `*`, `[]`, `?`, etc.
+
+```yaml
+plugins:
+  - search
+  - htmlproofer:
+      raise_error: True
+      ignore_pages:
+        - path/to/file
+        - path/to/folder/*
+```
+
 ### `validate_external_urls`
 
 Avoids validating any external URLs (i.e those starting with http:// or https://).
