@@ -70,6 +70,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('validate_rendered_template', config_options.Type(bool, default=False)),
         ('ignore_urls', config_options.Type(list, default=[])),
         ('warn_on_ignored_urls', config_options.Type(bool, default=False)),
+        ('ignore_pages', config_options.Type(list, default=[])),
     )
 
     def __init__(self):
@@ -121,6 +122,12 @@ class HtmlProoferPlugin(BasePlugin):
 
         for url in urls:
             if any(fnmatch.fnmatch(url, ignore_url) for ignore_url in self.config['ignore_urls']):
+                if self.config['warn_on_ignored_urls']:
+                    log_warning(f"ignoring URL {url} from {page.file.src_path}")
+            elif any(
+                fnmatch.fnmatch(page.file.src_path, ignore_page)
+                for ignore_page in self.config['ignore_pages']
+            ):
                 if self.config['warn_on_ignored_urls']:
                     log_warning(f"ignoring URL {url} from {page.file.src_path}")
             else:
