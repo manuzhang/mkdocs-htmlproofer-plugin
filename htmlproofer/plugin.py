@@ -3,6 +3,7 @@ from functools import lru_cache, partial
 import os.path
 import pathlib
 import re
+import time
 from typing import Dict, List, Optional, Set
 import urllib.parse
 import uuid
@@ -71,6 +72,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('ignore_urls', config_options.Type(list, default=[])),
         ('warn_on_ignored_urls', config_options.Type(bool, default=False)),
         ('ignore_pages', config_options.Type(list, default=[])),
+        ('retry_max_times', config_options.Type(int, default=0)),
     )
 
     def __init__(self):
@@ -132,9 +134,7 @@ class HtmlProoferPlugin(BasePlugin):
                 if self.config['warn_on_ignored_urls']:
                     log_warning(f"ignoring URL {url} from {page.file.src_path}")
             else:
-                url_status = self.get_url_status(url, page.file.src_path, all_element_ids, opt_files)
-                if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
-                    self.report_invalid_url(url, url_status, page.file.src_path)
+                self.check_url(url, page.file.src_path, all_element_ids, opt_files)
 
     def report_invalid_url(self, url, url_status, src_path):
         error = f'invalid url - {url} [{url_status}] [{src_path}]'
@@ -170,6 +170,27 @@ class HtmlProoferPlugin(BasePlugin):
             return -1
         except requests.exceptions.ConnectionError:
             return -1
+
+    def check_url(
+            self,
+            url: str,
+            src_path: str,
+            all_element_ids: Set[str],
+            files: Dict[str, File],
+            ) -> None:
+        retry_times = 0
+        retry_max_times = self.config['retry_max_times']
+        retry_duration = 2
+        while retry_times <= retry_max_times:
+            url_status = self.get_url_status(url, src_path, all_element_ids, files)
+            retry_times += 1
+            if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
+                if retry_times > retry_max_times:
+                    self.report_invalid_url(url, url_status, src_path)
+                else:
+                    log_info(f"Retrying URL {url} from {src_path} after {retry_duration} seconds...")
+                    time.sleep(retry_duration)
+                    retry_duration *= 2
 
     def get_url_status(
             self,
