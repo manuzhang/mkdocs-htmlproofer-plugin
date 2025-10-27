@@ -1,3 +1,6 @@
+# Building.
+setuptools
+
 # Linting.
 flake8
 
@@ -11,3 +14,6 @@ isort
 
 # Testing.
 pytest
+
+# Publishing.
+twine
