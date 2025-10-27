@@ -113,12 +113,13 @@ class HtmlProoferPlugin(BasePlugin):
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup', 'img'))
 
         content = output_content if self.config['validate_rendered_template'] else page.content
-        soup = BeautifulSoup(content, 'html.parser', parse_only=strainer)
+        soup = BeautifulSoup(str(content), 'html.parser', parse_only=strainer)
 
-        all_element_ids = set(tag['id'] for tag in soup.select('[id]'))
+        all_element_ids = set(str(tag['id']) for tag in soup.select('[id]'))
         all_element_ids.add('')  # Empty anchor is commonly used, but not real
 
-        urls = set(a['href'] for a in soup.find_all('a', href=True)) | set(img['src'] for img in soup.find_all('img'))
+        urls = (set(str(a['href']) for a in soup.find_all('a', href=True)) |
+                set(str(img['src']) for img in soup.find_all('img')))
 
         for url in urls:
             if any(fnmatch.fnmatch(url, ignore_url) for ignore_url in self.config['ignore_urls']):
