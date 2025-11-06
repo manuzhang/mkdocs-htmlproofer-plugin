@@ -33,3 +33,11 @@ But allows valid anchors such as
 <a href="/assets/hello-world.drawio.svg">![test](../assets/hello-world.drawio.svg)</a>
 
 <a href="/assets/hello-world.drawio.svg">![test](/assets/hello-world.drawio.svg)</a>
+
+## Inline-HTML in Markdown file
+
+[REGISTER](./page3.md#REGISTER)
+
+[REGISTER.FIELD1](./page3.md#REGISTER.FIELD1)
+
+[REGISTER.FIELD2](./page3.md#REGISTER.FIELD2)
