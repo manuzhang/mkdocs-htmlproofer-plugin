@@ -182,6 +182,17 @@ def test_get_url_status(validate_external: bool):
         ),
         (r'paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
         (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
+        # HTML anchor with id attribute
+        (r'<a id="myanchor"></a>', 'myanchor', True),
+        (r'<a id="myanchor">Link text</a>', 'myanchor', True),
+        # HTML anchor with name attribute (legacy)
+        (r'<a name="myanchor"></a>', 'myanchor', True),
+        (r'<a name="myanchor">Link text</a>', 'myanchor', True),
+        # HTML anchor in table cell
+        (r'<td rowspan="9"><a name="license"></a>foo bar</td>', 'license', True),
+        (r'<td><a id="REGISTER"></a>REGISTER</td>', 'REGISTER', True),
+        # Anchor with dots (like REGISTER.FIELD1)
+        (r'<a name="REGISTER.FIELD1"></a>FIELD1', 'REGISTER.FIELD1', True),
     ]
 )
 def test_contains_anchor(plugin, markdown, anchor, expected):

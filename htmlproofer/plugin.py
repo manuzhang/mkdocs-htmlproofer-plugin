@@ -26,7 +26,7 @@ NAME = "htmlproofer"
 
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
-HTML_LINK_PATTERN = re.compile(r'.*<a id=\"(.*)\">.*')
+HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
 IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 LOCAL_PATTERNS = [
     re.compile(rf'https?://{local}')
@@ -308,9 +308,11 @@ class HtmlProoferPlugin(BasePlugin):
                 if anchor == anchor_slug:
                     return True
 
-            link_match = HTML_LINK_PATTERN.match(line)
-            if link_match is not None and link_match.group(1) == anchor:
-                return True
+            # Check for HTML anchors using id or name attributes
+            # Multiple anchors can exist on a single line, so find all of them
+            for html_anchor in re.findall(HTML_LINK_PATTERN, line):
+                if anchor == html_anchor:
+                    return True
 
             # Any attribute list at end of paragraphs or after images can also generate an anchor (in addition to
             # the heading ones) so gather those and check as well (multiple could be a line so gather all)
