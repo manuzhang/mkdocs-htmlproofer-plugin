@@ -167,6 +167,16 @@ plugins:
       skip_downloads: True
 ```
 
+### `retry_max_times`
+
+Sets the maximum number of HTTP request retries when checking a URL. Defaults to 0 (no retries).
+
+```yaml
+plugins:
+  - htmlproofer:
+      retry_max_times: 3
+```
+
 ## Compatibility with `attr_list` extension
 
 If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown.
