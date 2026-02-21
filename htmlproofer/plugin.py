@@ -1,8 +1,10 @@
+import concurrent.futures
 import fnmatch
 from functools import lru_cache, partial
 import os.path
 import pathlib
 import re
+import threading
 import time
 from typing import Dict, List, Optional, Set
 import urllib.parse
@@ -73,19 +75,28 @@ class HtmlProoferPlugin(BasePlugin):
         ('warn_on_ignored_urls', config_options.Type(bool, default=False)),
         ('ignore_pages', config_options.Type(list, default=[])),
         ('retry_max_times', config_options.Type(int, default=0)),
+        ('max_workers', config_options.Type(int, default=None)),
     )
 
     def __init__(self):
-        self._session = requests.Session()
-        self._session.verify = False
-        self._session.headers.update(URL_HEADERS)
-        self._session.max_redirects = 5
+        self._local = threading.local()
         self.files = []
         self.scheme_handlers = {
             "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
             "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
         }
         super().__init__()
+
+    def _get_session(self) -> requests.Session:
+        """Return a per-thread `requests.Session`, creating one lazily if needed."""
+        session = getattr(self._local, 'session', None)
+        if session is None:
+            session = requests.Session()
+            session.verify = False
+            session.headers.update(URL_HEADERS)
+            session.max_redirects = 5
+            self._local.session = session
+        return session
 
     def on_post_build(self, config: Config) -> None:
         if self.config['raise_error_after_finish'] and self.invalid_links:
@@ -123,6 +134,7 @@ class HtmlProoferPlugin(BasePlugin):
         urls = (set(str(a['href']) for a in soup.find_all('a', href=True)) |
                 set(str(img['src']) for img in soup.find_all('img')))
 
+        urls_to_check: List[str] = []
         for url in urls:
             if any(fnmatch.fnmatch(url, ignore_url) for ignore_url in self.config['ignore_urls']):
                 if self.config['warn_on_ignored_urls']:
@@ -134,7 +146,21 @@ class HtmlProoferPlugin(BasePlugin):
                 if self.config['warn_on_ignored_urls']:
                     log_warning(f"ignoring URL {url} from {page.file.src_path}")
             else:
-                self.check_url(url, page.file.src_path, all_element_ids, opt_files)
+                urls_to_check.append(url)
+
+        # Note on exception propagation: `future.result()` re-raises any exception
+        # from a worker thread. If `raise_error` is `True` and multiple URLs fail
+        # concurrently, only the first exception to be observed here will propagate;
+        # remaining futures continue to execute but their exceptions are not raised.
+        # This is acceptable because each thread independently logs/reports its
+        # failure via `report_invalid_url` before raising, so no errors are silently
+        # lost. When `raise_error_after_finish` is used instead, all failures are
+        # recorded via the `invalid_links` flag and surfaced in `on_post_build`.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.config['max_workers']) as executor:
+            for future in concurrent.futures.as_completed(
+                executor.submit(self.check_url, url, page.file.src_path, all_element_ids, opt_files) for url in urls_to_check
+            ):
+                future.result()
 
     def report_invalid_url(self, url, url_status, src_path):
         error = f'invalid url - {url} [{url_status}] [{src_path}]'
@@ -156,7 +182,7 @@ class HtmlProoferPlugin(BasePlugin):
     @lru_cache(maxsize=1000)
     def resolve_web_scheme(self, url: str) -> int:
         try:
-            response = self._session.get(url, timeout=URL_TIMEOUT, stream=True)
+            response = self._get_session().get(url, timeout=URL_TIMEOUT, stream=True)
 
             if self.config['skip_downloads'] is False:
                 # Download the entire contents as to not break previous behaviour.

@@ -177,6 +177,17 @@ plugins:
       retry_max_times: 3
 ```
 
+### `max_workers`
+
+Optionally set the maximum number of worker threads used to validate URLs concurrently.
+By default, this is not set and the [default of Python's `ThreadPoolExecutor`](https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.ThreadPoolExecutor) is used.
+
+```yaml
+plugins:
+  - htmlproofer:
+      max_workers: 16
+```
+
 ## Compatibility with `attr_list` extension
 
 If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown.
