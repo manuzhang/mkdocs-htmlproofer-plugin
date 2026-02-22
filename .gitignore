@@ -46,3 +46,6 @@ test/integration/site
 
 # Project specfic
 tests/integration/site
+
+# Agent
+CLAUDE.md
