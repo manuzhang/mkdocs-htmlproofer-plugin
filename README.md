@@ -197,7 +197,7 @@ This can be useful for multilingual documentation to keep anchors as language ne
 
 * A sample for a heading `# Grüße {#greetings}` (the slugified generated anchor `Gre` is overwritten with `greetings`).
 * This also works for images `this is a nice image [](foo-bar.png){#nice-image}`
-* And generall for paragraphs:
+* And generally for paragraphs:
 ```markdown
 Listing: This is noteworthy.
 {#paragraphanchor}
