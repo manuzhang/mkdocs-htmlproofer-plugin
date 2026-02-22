@@ -4,7 +4,8 @@
 
 *A [MkDocs](https://www.mkdocs.org/) plugin that validates URLs, including anchors, in rendered html files*.
 
-> Note: [MkDocs 1.6+ supports native validation of anchors](https://www.mkdocs.org/user-guide/configuration/#validation).
+> [!NOTE]
+> [MkDocs 1.6+ supports native validation of anchors](https://www.mkdocs.org/user-guide/configuration/#validation).
 
 ## Installation
 
@@ -21,7 +22,8 @@ pip install mkdocs-htmlproofer-plugin
 
 2. Enable the plugin in your `mkdocs.yml`:
 
-> **Note:** If you have no `plugins` entry in your config file yet, you'll likely also want to add the `search` plugin.
+> [!NOTE]
+> If you have no `plugins` entry in your config file yet, you'll likely also want to add the `search` plugin.
 MkDocs enables it by default if there is no `plugins` entry set, but now you have to enable it explicitly.
 
 ```yaml
