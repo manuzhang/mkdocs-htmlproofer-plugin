@@ -18,7 +18,7 @@ setup(
     author='Manu Zhang',
     author_email='owenzhang1990@gmail.com',
     license='MIT',
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     install_requires=[
         'mkdocs>=1.4.0',
         'Markdown',
