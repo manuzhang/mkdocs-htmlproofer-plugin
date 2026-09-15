@@ -29,6 +29,7 @@ NAME = "htmlproofer"
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
+FENCE_PATTERN = re.compile(r'\s*(`{3,}|~{3,})')
 HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
 IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 LOCAL_PATTERNS = [
@@ -44,6 +45,13 @@ ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
 #   :octicons-apps-16:
 #   :material-star:
 EMOJI_PATTERN = re.compile(r'\:[a-z0-9_-]+\:')
+
+# Errors for URLs that can't be requested at all, so retrying them can't succeed
+MALFORMED_URL_ERRORS = (
+    requests.exceptions.InvalidURL,
+    requests.exceptions.InvalidSchema,
+    requests.exceptions.MissingSchema,
+)
 
 urllib3.disable_warnings()
 
@@ -184,16 +192,19 @@ class HtmlProoferPlugin(BasePlugin):
     def resolve_web_scheme(self, url: str) -> int:
         # Retry here rather than in `check_url`, so that only web URLs are retried
         # and a transient failure is not cached (and replayed) as the final status.
-        url_status = self.fetch_web_url_status(url)
-        retry_duration = 2
-        for _ in range(self.config['retry_max_times']):
-            if not (self.bad_url(url_status) and self.is_error(self.config, url, url_status)):
-                break
-            log_info(f"Retrying URL {url} after {retry_duration} seconds...")
-            time.sleep(retry_duration)
-            retry_duration *= 2
+        try:
             url_status = self.fetch_web_url_status(url)
-        return url_status
+            retry_duration = 2
+            for _ in range(self.config['retry_max_times']):
+                if not (self.bad_url(url_status) and self.is_error(self.config, url, url_status)):
+                    break
+                log_info(f"Retrying URL {url} after {retry_duration} seconds...")
+                time.sleep(retry_duration)
+                retry_duration *= 2
+                url_status = self.fetch_web_url_status(url)
+            return url_status
+        except MALFORMED_URL_ERRORS:
+            return -1
 
     def fetch_web_url_status(self, url: str) -> int:
         try:
@@ -210,6 +221,8 @@ class HtmlProoferPlugin(BasePlugin):
                 response.close()
         except requests.exceptions.Timeout:
             return 504
+        except MALFORMED_URL_ERRORS:
+            raise
         except requests.exceptions.RequestException:
             # e.g. ConnectionError, TooManyRedirects, InvalidURL, ChunkedEncodingError
             return -1
@@ -309,7 +322,7 @@ class HtmlProoferPlugin(BasePlugin):
         """Check if a set of Markdown source text contains a heading that corresponds to a
         given anchor."""
         previous_line = ''
-        for line in markdown.splitlines():
+        for line in HtmlProoferPlugin.blank_fenced_code(markdown.splitlines()):
             # Markdown allows whitespace before headers and an arbitrary number of #'s.
             heading_match = HEADING_PATTERN.match(line)
             if heading_match is not None:
@@ -329,11 +342,44 @@ class HtmlProoferPlugin(BasePlugin):
 
             # Any attribute list at end of paragraphs or after images can also generate an anchor (in addition to
             # the heading ones) so gather those and check as well (multiple could be a line so gather all)
-            for attr_list_anchor in re.findall(ATTRLIST_ANCHOR_PATTERN, line):
-                if anchor == attr_list_anchor:
-                    return True
+            if anchor in HtmlProoferPlugin.attr_list_anchors(line):
+                return True
 
         return False
+
+    @staticmethod
+    def blank_fenced_code(lines: List[str]) -> List[str]:
+        """Blank out the lines of fenced code blocks, which don't generate any headings or anchors."""
+        lines = list(lines)
+        start: Optional[int] = None
+        fence = ''
+        for i, line in enumerate(lines):
+            match = FENCE_PATTERN.match(line)
+            if match is None:
+                continue
+            if start is None:
+                start, fence = i, match.group(1)
+            elif match.group(1).startswith(fence) and not line[match.end():].strip():
+                # A fence is closed by at least as many of the same characters. Unclosed fences are
+                # left alone, as they aren't rendered as code blocks.
+                lines[start:i + 1] = [''] * (i + 1 - start)
+                start = None
+        return lines
+
+    @staticmethod
+    def attr_list_anchors(line: str) -> List[str]:
+        """Find the anchors set by attribute lists in a line of Markdown."""
+        anchors = []
+        for match in ATTRLIST_ANCHOR_PATTERN.finditer(line):
+            before, after = line[:match.start()], line[match.end():]
+            # An attribute list only applies when it directly follows an element, stands on its own line,
+            # or ends a heading or table cell. Otherwise, it's rendered as literal text.
+            directly_follows = not before[-1:].isspace()
+            own_line = not before.strip()
+            ends_element = not after.strip() or after.lstrip().startswith('|')
+            if directly_follows or own_line or ends_element:
+                anchors.append(match.group(1))
+        return anchors
 
     @staticmethod
     def heading_matches_anchor(heading: str, anchor: str) -> bool:
@@ -344,11 +390,11 @@ class HtmlProoferPlugin(BasePlugin):
         # # Heading {.testclass #testanchor}
         # # Heading {.testclass}
         # these can override the headings anchor id, or alternatively just provide additional class etc.
-        attr_list_anchor_match = ATTRLIST_ANCHOR_PATTERN.match(heading)
-        if attr_list_anchor_match is not None and anchor == attr_list_anchor_match.group(1):
-            return True
-
-        heading = re.sub(ATTRLIST_PATTERN, '', heading)  # remove any attribute list from heading, before slugify
+        # The anchors they set are found by `attr_list_anchors`, so just remove them before slugify.
+        # Attribute lists which don't apply (e.g. at the start of a heading) are rendered as text though,
+        # so also accept the slug with them left in.
+        literal_heading = re.sub(EMOJI_PATTERN, '', heading)
+        heading = re.sub(ATTRLIST_PATTERN, '', heading)
 
         # Headings are allowed to have images after them, of the form:
         # # Heading [![Image](image-link)] or ![Image][image-reference]
@@ -359,7 +405,7 @@ class HtmlProoferPlugin(BasePlugin):
         # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown-extensions/#emoji
         heading = re.sub(EMOJI_PATTERN, '', heading)
 
-        return anchor == slugify(heading, '-')
+        return anchor in (slugify(heading, '-'), slugify(literal_heading, '-'))
 
     @staticmethod
     def bad_url(url_status: int) -> bool:
