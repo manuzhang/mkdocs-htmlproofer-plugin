@@ -180,7 +180,9 @@ def test_get_url_status(empty_files, validate_external: bool):
         (r'## Heading {#customanchor}', 'customanchor', True),
         (r'## Heading {: #customanchor}', 'customanchor', True),
         (r'## Heading {.customclass #customanchor}', 'customanchor', True),
-        (r'## {#customanchor} Heading', 'customanchor', True),
+        # attr_list only applies attribute lists at the end of headings
+        (r'## {#customanchor} Heading', 'customanchor', False),
+        (r'## {#customanchor} Heading', 'customanchor-heading', True),
         (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
         # test faulty image in heading syntax
         (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this-imageimage-link', True),
@@ -198,6 +200,9 @@ def test_get_url_status(empty_files, validate_external: bool):
         ),
         (r'paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
         (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
+        ('Paragraph text\n  {#paragraphanchor}', 'paragraphanchor', True),
+        ('Text {#literal} more text', 'literal', False),
+        ('| Cell {#cellanchor} | Other |', 'cellanchor', True),
         # HTML anchor with id attribute
         (r'<a id="myanchor"></a>', 'myanchor', True),
         (r'<a id="myanchor">Link text</a>', 'myanchor', True),
@@ -214,6 +219,16 @@ def test_get_url_status(empty_files, validate_external: bool):
         ('Sub Heading\n-----------\nContent', 'sub-heading', True),
         ('Sub Heading {#customanchor}\n---', 'customanchor', True),
         ('Paragraph\n\n---', 'paragraph', False),
+        # Fenced code blocks
+        ('```\nFake\n---\n```', 'fake', False),
+        ('```bash\n# comment\n```', 'comment', False),
+        ('~~~\n<a id="fake"></a>\n~~~', 'fake', False),
+        ('```\n~~~\n# Mixed fences\n```', 'mixed-fences', False),
+        ('````markdown\n```\n# Nested\n```\n````', 'nested', False),
+        # Indented fences, e.g. in admonitions with pymdownx.superfences
+        ('    ```python\n    # comment\n    ```\n# Heading', 'comment', False),
+        ('    ```python\n    # comment\n    ```\n# Heading', 'heading', True),
+        ('```\nUnclosed fence\n# Heading', 'heading', True),
     ]
 )
 def test_contains_anchor(plugin, markdown, anchor, expected):
@@ -638,6 +653,17 @@ def test_resolve_web_scheme__no_retry_for_excluded_status(sleep_mock, mock_reque
     mock_requests.side_effect = [mock_response(503)]
 
     assert plugin.resolve_web_scheme('https://example.com/excluded') == 503
+    sleep_mock.assert_not_called()
+
+
+@patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
+def test_resolve_web_scheme__no_retry_for_malformed_url(sleep_mock, mock_requests):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'retry_max_times': 3})
+    mock_requests.side_effect = requests.exceptions.InvalidURL("No host supplied")
+
+    assert plugin.resolve_web_scheme('http://') == -1
+    assert mock_requests.call_count == 1
     sleep_mock.assert_not_called()
 
 
