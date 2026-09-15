@@ -28,6 +28,7 @@ NAME = "htmlproofer"
 
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
+SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
 HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
 IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 LOCAL_PATTERNS = [
@@ -132,7 +133,7 @@ class HtmlProoferPlugin(BasePlugin):
         all_element_ids.add('')  # Empty anchor is commonly used, but not real
 
         urls = (set(str(a['href']) for a in soup.find_all('a', href=True)) |
-                set(str(img['src']) for img in soup.find_all('img')))
+                set(str(img['src']) for img in soup.find_all('img', src=True)))
 
         urls_to_check: List[str] = []
         for url in urls:
@@ -181,20 +182,36 @@ class HtmlProoferPlugin(BasePlugin):
 
     @lru_cache(maxsize=1000)
     def resolve_web_scheme(self, url: str) -> int:
+        # Retry here rather than in `check_url`, so that only web URLs are retried
+        # and a transient failure is not cached (and replayed) as the final status.
+        url_status = self.fetch_web_url_status(url)
+        retry_duration = 2
+        for _ in range(self.config['retry_max_times']):
+            if not (self.bad_url(url_status) and self.is_error(self.config, url, url_status)):
+                break
+            log_info(f"Retrying URL {url} after {retry_duration} seconds...")
+            time.sleep(retry_duration)
+            retry_duration *= 2
+            url_status = self.fetch_web_url_status(url)
+        return url_status
+
+    def fetch_web_url_status(self, url: str) -> int:
         try:
             response = self._get_session().get(url, timeout=URL_TIMEOUT, stream=True)
+            try:
+                if self.config['skip_downloads'] is False:
+                    # Download the entire contents as to not break previous behaviour.
+                    for _ in response.iter_content(chunk_size=1024 * 1024):
+                        pass
 
-            if self.config['skip_downloads'] is False:
-                # Download the entire contents as to not break previous behaviour.
-                for _ in response.iter_content(chunk_size=1024 * 1024):
-                    pass
-
-            return response.status_code
+                return response.status_code
+            finally:
+                # Release the connection, which is kept open by `stream=True` otherwise.
+                response.close()
         except requests.exceptions.Timeout:
             return 504
-        except requests.exceptions.TooManyRedirects:
-            return -1
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.RequestException:
+            # e.g. ConnectionError, TooManyRedirects, InvalidURL, ChunkedEncodingError
             return -1
 
     def check_url(
@@ -204,19 +221,9 @@ class HtmlProoferPlugin(BasePlugin):
             all_element_ids: Set[str],
             files: Dict[str, File],
             ) -> None:
-        retry_times = 0
-        retry_max_times = self.config['retry_max_times']
-        retry_duration = 2
-        while retry_times <= retry_max_times:
-            url_status = self.get_url_status(url, src_path, all_element_ids, files)
-            retry_times += 1
-            if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
-                if retry_times > retry_max_times:
-                    self.report_invalid_url(url, url_status, src_path)
-                else:
-                    log_info(f"Retrying URL {url} from {src_path} after {retry_duration} seconds...")
-                    time.sleep(retry_duration)
-                    retry_duration *= 2
+        url_status = self.get_url_status(url, src_path, all_element_ids, files)
+        if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
+            self.report_invalid_url(url, url_status, src_path)
 
     def get_url_status(
             self,
@@ -301,38 +308,18 @@ class HtmlProoferPlugin(BasePlugin):
     def contains_anchor(markdown: str, anchor: str) -> bool:
         """Check if a set of Markdown source text contains a heading that corresponds to a
         given anchor."""
+        previous_line = ''
         for line in markdown.splitlines():
             # Markdown allows whitespace before headers and an arbitrary number of #'s.
             heading_match = HEADING_PATTERN.match(line)
             if heading_match is not None:
-                heading = heading_match.groups()[0]
-
-                # Headings are allowed to have attr_list after them, of the form:
-                # # Heading { #testanchor .testclass }
-                # # Heading {: #testanchor .testclass }
-                # # Heading {.testclass #testanchor}
-                # # Heading {.testclass}
-                # these can override the headings anchor id, or alternatively just provide additional class etc.
-                attr_list_anchor_match = ATTRLIST_ANCHOR_PATTERN.match(heading)
-                if attr_list_anchor_match is not None:
-                    attr_list_anchor = heading_match.groups()[1]
-                    if anchor == attr_list_anchor:
-                        return True
-
-                heading = re.sub(ATTRLIST_PATTERN, '', heading)  # remove any attribute list from heading, before slugify
-
-                # Headings are allowed to have images after them, of the form:
-                # # Heading [![Image](image-link)] or ![Image][image-reference]
-                # But these images are not included in the generated anchor, so remove them.
-                heading = re.sub(IMAGE_PATTERN, '', heading)
-
-                # Headings are allowed to have emojis in them under certain Mkdocs themes.
-                # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown-extensions/#emoji
-                heading = re.sub(EMOJI_PATTERN, '', heading)
-
-                anchor_slug = slugify(heading, '-')
-                if anchor == anchor_slug:
+                if HtmlProoferPlugin.heading_matches_anchor(heading_match.group(1), anchor):
                     return True
+            elif previous_line.strip() and SETEXT_UNDERLINE_PATTERN.match(line):
+                # Setext headings are underlined with ='s or -'s on the line after the heading text.
+                if HtmlProoferPlugin.heading_matches_anchor(previous_line.strip(), anchor):
+                    return True
+            previous_line = line
 
             # Check for HTML anchors using id or name attributes
             # Multiple anchors can exist on a single line, so find all of them
@@ -347,6 +334,32 @@ class HtmlProoferPlugin(BasePlugin):
                     return True
 
         return False
+
+    @staticmethod
+    def heading_matches_anchor(heading: str, anchor: str) -> bool:
+        """Check if a Markdown heading text corresponds to a given anchor."""
+        # Headings are allowed to have attr_list after them, of the form:
+        # # Heading { #testanchor .testclass }
+        # # Heading {: #testanchor .testclass }
+        # # Heading {.testclass #testanchor}
+        # # Heading {.testclass}
+        # these can override the headings anchor id, or alternatively just provide additional class etc.
+        attr_list_anchor_match = ATTRLIST_ANCHOR_PATTERN.match(heading)
+        if attr_list_anchor_match is not None and anchor == attr_list_anchor_match.group(1):
+            return True
+
+        heading = re.sub(ATTRLIST_PATTERN, '', heading)  # remove any attribute list from heading, before slugify
+
+        # Headings are allowed to have images after them, of the form:
+        # # Heading [![Image](image-link)] or ![Image][image-reference]
+        # But these images are not included in the generated anchor, so remove them.
+        heading = re.sub(IMAGE_PATTERN, '', heading)
+
+        # Headings are allowed to have emojis in them under certain Mkdocs themes.
+        # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown-extensions/#emoji
+        heading = re.sub(EMOJI_PATTERN, '', heading)
+
+        return anchor == slugify(heading, '-')
 
     @staticmethod
     def bad_url(url_status: int) -> bool:

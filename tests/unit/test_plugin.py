@@ -7,6 +7,7 @@ from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
 import mkdocs.utils
 import pytest
+import requests
 from requests import Response
 
 import htmlproofer.plugin
@@ -123,6 +124,20 @@ def test_on_post_page__img():
         plugin.on_post_page('<img src="not-existing.png" />', page, Mock(spec=Config))
 
 
+def test_on_post_page__img_without_src():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'validate_rendered_template': True,
+        'raise_error': True,
+    })
+    page = Mock(
+        spec=Page,
+        file=Mock(spec=File, src_path='blah.md'),
+        content='',
+    )
+    plugin.on_post_page('<img data-src="lazy-loaded.png" />', page, Mock(spec=Config))
+
+
 @pytest.mark.parametrize(
     'url',
     (
@@ -138,7 +153,7 @@ def test_get_url_status__ignore_local_servers(plugin, empty_files, url):
 @pytest.mark.parametrize(
     'validate_external', (True, False)
 )
-def test_get_url_status(validate_external: bool):
+def test_get_url_status(empty_files, validate_external: bool):
     plugin = HtmlProoferPlugin()
     plugin.load_config({'validate_external_urls': validate_external})
 
@@ -165,6 +180,7 @@ def test_get_url_status(validate_external: bool):
         (r'## Heading {#customanchor}', 'customanchor', True),
         (r'## Heading {: #customanchor}', 'customanchor', True),
         (r'## Heading {.customclass #customanchor}', 'customanchor', True),
+        (r'## {#customanchor} Heading', 'customanchor', True),
         (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
         # test faulty image in heading syntax
         (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this-imageimage-link', True),
@@ -193,6 +209,11 @@ def test_get_url_status(validate_external: bool):
         (r'<td><a id="REGISTER"></a>REGISTER</td>', 'REGISTER', True),
         # Anchor with dots (like REGISTER.FIELD1)
         (r'<a name="REGISTER.FIELD1"></a>FIELD1', 'REGISTER.FIELD1', True),
+        # Setext headings
+        ('Heading\n=======', 'heading', True),
+        ('Sub Heading\n-----------\nContent', 'sub-heading', True),
+        ('Sub Heading {#customanchor}\n---', 'customanchor', True),
+        ('Paragraph\n\n---', 'paragraph', False),
     ]
 )
 def test_contains_anchor(plugin, markdown, anchor, expected):
@@ -539,3 +560,106 @@ def test_report_invalid_url__not_raise_error__only_log_warning_is_called(log_war
     log_warning_mock.assert_called_once()
     log_error_mock.assert_not_called()
     assert not plugin.invalid_links
+
+
+def mock_response(status_code):
+    return Mock(spec=Response, status_code=status_code, iter_content=Mock(return_value=[b'content']))
+
+
+@pytest.mark.parametrize(
+    'exception, expected_status', [
+        (requests.exceptions.InvalidURL("No host supplied"), -1),
+        (requests.exceptions.ConnectionError(), -1),
+        (requests.exceptions.TooManyRedirects(), -1),
+        (requests.exceptions.ConnectTimeout(), 504),
+        (requests.exceptions.ReadTimeout(), 504),
+    ]
+)
+def test_resolve_web_scheme__request_exception(plugin, mock_requests, exception, expected_status):
+    mock_requests.side_effect = exception
+
+    assert plugin.resolve_web_scheme('http://') == expected_status
+
+
+@pytest.mark.parametrize('skip_downloads', (False, True))
+def test_resolve_web_scheme__response_is_closed(mock_requests, skip_downloads):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'skip_downloads': skip_downloads})
+    response = mock_response(200)
+    mock_requests.side_effect = [response]
+
+    assert plugin.resolve_web_scheme('https://example.com') == 200
+    assert response.iter_content.called != skip_downloads
+    response.close.assert_called_once()
+
+
+def test_resolve_web_scheme__download_error(plugin, mock_requests):
+    response = mock_response(200)
+    response.iter_content.side_effect = requests.exceptions.ChunkedEncodingError()
+    mock_requests.side_effect = [response]
+
+    assert plugin.resolve_web_scheme('https://example.com') == -1
+    response.close.assert_called_once()
+
+
+@patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
+def test_resolve_web_scheme__retry_until_success(sleep_mock, mock_requests):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'retry_max_times': 3})
+    mock_requests.side_effect = [
+        mock_response(503),
+        requests.exceptions.ConnectionError(),
+        mock_response(200),
+    ]
+
+    assert plugin.resolve_web_scheme('https://example.com') == 200
+    assert mock_requests.call_count == 3
+    assert [c.args for c in sleep_mock.call_args_list] == [(2,), (4,)]
+
+
+@patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
+def test_resolve_web_scheme__retry_gives_up(sleep_mock, mock_requests):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'retry_max_times': 2})
+    mock_requests.side_effect = [mock_response(503), mock_response(503), mock_response(503)]
+
+    assert plugin.resolve_web_scheme('https://example.com') == 503
+    assert mock_requests.call_count == 3
+    assert sleep_mock.call_count == 2
+
+
+@patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
+def test_resolve_web_scheme__no_retry_for_excluded_status(sleep_mock, mock_requests):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'retry_max_times': 2,
+        'raise_error_excludes': {503: ['https://example.com/*']},
+    })
+    mock_requests.side_effect = [mock_response(503)]
+
+    assert plugin.resolve_web_scheme('https://example.com/excluded') == 503
+    sleep_mock.assert_not_called()
+
+
+@patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
+def test_check_url__retried_url_is_not_reported(sleep_mock, mock_requests):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'retry_max_times': 1, 'raise_error': True})
+    mock_requests.side_effect = [mock_response(503), mock_response(200)]
+
+    plugin.check_url('https://example.com', 'index.md', set(), {})
+    # The final status is cached, so checking the URL again doesn't make any request
+    plugin.check_url('https://example.com', 'other.md', set(), {})
+
+    assert mock_requests.call_count == 2
+    sleep_mock.assert_called_once_with(2)
+
+
+@patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
+def test_check_url__local_url_is_not_retried(sleep_mock, plugin):
+    plugin.config['retry_max_times'] = 3
+    plugin.config['raise_error'] = True
+
+    with pytest.raises(PluginError):
+        plugin.check_url('non-existing.html', 'index.md', set(), {})
+    sleep_mock.assert_not_called()
