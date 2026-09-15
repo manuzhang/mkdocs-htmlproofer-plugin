@@ -45,7 +45,7 @@ plugins:
       enabled: !ENV [ENABLED_HTMLPROOFER, True]
 ```
 
-Which enables you do disable the plugin locally using:
+Which enables you to disable the plugin locally using:
 
 ```bash
 export ENABLED_HTMLPROOFER=false
@@ -55,7 +55,7 @@ mkdocs serve
 
 ### `raise_error`
 
-Optionally, you may raise an error and fail the build on first bad url status. Takes precedense over `raise_error_after_finish`.
+Optionally, you may raise an error and fail the build on first bad url status. Takes precedence over `raise_error_after_finish`.
 
 ```yaml
 plugins:
@@ -132,7 +132,7 @@ plugins:
   - htmlproofer:
       raise_error: True
       ignore_pages:
-        - path/to/file
+        - path/to/file.md
         - path/to/folder/*
 ```
 
@@ -171,7 +171,8 @@ plugins:
 
 ### `retry_max_times`
 
-Sets the maximum number of HTTP request retries when checking a URL. Defaults to 0 (no retries).
+Sets the maximum number of HTTP request retries when checking an external URL. Defaults to 0 (no retries).
+Retries back off exponentially, starting at 2 seconds. Local links and anchors are not retried.
 
 ```yaml
 plugins:
@@ -195,8 +196,8 @@ plugins:
 If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown.
 This can be useful for multilingual documentation to keep anchors as language neutral permalinks in all languages.
 
-* A sample for a heading `# Grüße {#greetings}` (the slugified generated anchor `Gre` is overwritten with `greetings`).
-* This also works for images `this is a nice image [](foo-bar.png){#nice-image}`
+* A sample for a heading `# Grüße {#greetings}` (the slugified generated anchor `grue` is overwritten with `greetings`).
+* This also works for images `this is a nice image ![](foo-bar.png){#nice-image}`
 * And generally for paragraphs:
 ```markdown
 Listing: This is noteworthy.
