@@ -183,7 +183,21 @@ def test_get_url_status(empty_files, validate_external: bool):
         (r'## {#customanchor} Heading', 'customanchor-heading', True),
         (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
         (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this', True),
-        ('# Heading [![alt][img]][target]', 'heading', True),
+        ('# Heading [![alt][img]][target]\n\n[img]: i.png\n[target]: t.html', 'heading', True),
+        # An undefined reference renders literally, so it stays part of the slug
+        ('# Heading [text][undefined]', 'heading-textundefined', True),
+        ('# Heading [text][undefined]', 'heading-text', False),
+        ('# Heading [text][ref]\n\n[ref]: t.html', 'heading-text', True),
+        # Markdown within a code span is literal text
+        ('# Example `[![alt](src)](href)`', 'example-altsrchref', True),
+        ('# Example `{#codeid}` text', 'example-codeid-text', True),
+        ('## `code`{#codeid} text', 'codeid', True),
+        ('## `code`{#codeid} text', 'code-text', True),
+        # An attribute list applies to an inline element, not to literal punctuation
+        ('# Heading (text){#id}', 'heading-textid', True),
+        # Indented content of a list or an admonition is Markdown rather than code
+        ('!!! note\n\n    ## Inner heading\n', 'inner-heading', True),
+        ('- item\n\n    ## Listed heading\n', 'listed-heading', True),
         # A linked image, as in the README's own heading
         ('# mkdocs-htmlproofer-plugin [![PyPI - Version](https://img.shields.io/pypi/v/x.svg)]'
          '(https://pypi.org/project/x)', 'mkdocs-htmlproofer-plugin', True),
@@ -285,6 +299,12 @@ STRICT_ONLY_ANCHORS = [
     ('    Fake\n---', 'fake'),
     # The closing #'s of a Setext heading are content, so its attribute list isn't trailing
     ('Title {#id} ##\n---', 'id'),
+    # An indented code block renders no heading
+    ('Intro\n\n    # comment\n\nOutro', 'comment'),
+    # Literal punctuation doesn't make an attribute list apply to an inline element
+    ('# Heading (text){#id}', 'id'),
+    # An attribute list within a code span is literal text
+    ('# Example `{#codeid}` text', 'codeid'),
 ]
 
 
@@ -297,6 +317,35 @@ def test_contains_anchor__strict_anchors(plugin, markdown, anchor):
 def test_contains_anchor__accepted_without_strict_anchors(plugin, markdown, anchor):
     # Without the option, these keep passing, so upgrading doesn't fail a build which passed before
     assert plugin.contains_anchor(markdown, anchor) is True
+
+
+@pytest.mark.parametrize(
+    'markdown, anchor, expected', [
+        # Without the extension an attribute list is literal text, which the slug includes
+        ('## Heading {#id}', 'heading-id', True),
+        ('## Heading {#id}', 'id', False),
+        ('## Heading {.cls}', 'heading-cls', True),
+        ('## Heading {.cls}', 'heading', False),
+    ]
+)
+def test_contains_anchor__without_attr_list(plugin, markdown, anchor, expected):
+    assert plugin.contains_anchor(markdown, anchor, strict_anchors=True, attr_list=False) == expected
+
+
+@pytest.mark.parametrize(
+    'markdown_extensions, expected', [
+        (['attr_list', 'toc'], True),
+        (['toc'], False),
+        ([], False),
+    ]
+)
+def test_on_config__attr_list(plugin, markdown_extensions, expected):
+    config = Mock(spec=Config)
+    config.get.return_value = markdown_extensions
+
+    plugin.on_config(config)
+
+    assert plugin.attr_list == expected
 
 
 @pytest.mark.parametrize('strict_anchors', (False, True))
