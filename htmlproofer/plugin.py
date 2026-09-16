@@ -53,10 +53,17 @@ REFERENCE_DEFINITION_PATTERN = re.compile(r'^ {0,3}\[([^\]]+)\]:', re.MULTILINE)
 REFERENCE_USE_PATTERN = re.compile(r'\[([^\]]*)\]\[([^\]]*)\]')
 # A list item or admonition, whose indented content is Markdown rather than a code block.
 # `!!!` needs the admonition extension to render, and `???` the details extension.
-LIST_ITEM_PATTERN = re.compile(r'(?:[-*+]\s|\d+[.)]\s)')
+LIST_ITEM_PATTERN = re.compile(r'(?:[-*+]\s|\d+\.\s)')
 CONTAINER_MARKERS = {'!!!': 'admonition', '???': 'details'}
 # Markdown within an HTML comment isn't rendered, and a block quote's content is
 HTML_COMMENT_PATTERN = re.compile(r'<!--[\s\S]*?-->')
+# Nor is Markdown within a block-level HTML element, whose content is raw HTML
+HTML_BLOCK_TAGS = (
+    'address|article|aside|blockquote|details|div|dl|fieldset|figcaption|figure|footer|form|h[1-6]|'
+    'header|hr|main|nav|ol|p|pre|section|table|ul'
+)
+HTML_BLOCK_START_PATTERN = re.compile(rf'^ {{0,3}}<({HTML_BLOCK_TAGS})\b', re.IGNORECASE)
+HTML_BLOCK_END_PATTERN = re.compile(rf'</({HTML_BLOCK_TAGS})\s*>\s*$', re.IGNORECASE)
 BLOCKQUOTE_PATTERN = re.compile(r'^ {0,3}(?:> ?)+')
 # An image written as a shortcut reference, e.g. ![logo], which renders when its label is defined
 SHORTCUT_IMAGE_PATTERN = re.compile(r'(?<!\\)\!\[([^\]]*)\](?![\(\[])')
@@ -419,24 +426,28 @@ class HtmlProoferPlugin(BasePlugin):
         rendered = HtmlProoferPlugin.blank_html_comments(
             HtmlProoferPlugin.blank_indented_code(
                 HtmlProoferPlugin.blank_fenced_code(lines), containers))
+        # Markdown within a block-level HTML element is raw HTML, so it generates no heading and
+        # applies no attribute list, although the anchors written in it do render
+        markdown_lines = anchor_lines = lines
         if strict_anchors:
-            lines = rendered
+            markdown_lines, anchor_lines = HtmlProoferPlugin.blank_html_blocks(rendered), rendered
         # Python-Markdown collapses the whitespace of a reference's label
         references = frozenset(' '.join(label.split()).lower() for label
                                in REFERENCE_DEFINITION_PATTERN.findall('\n'.join(rendered)))
-        table_lines = HtmlProoferPlugin.table_lines(lines) if tables else set()
+        table_lines = HtmlProoferPlugin.table_lines(markdown_lines) if tables else set()
         # attr_list runs before toc, so an id it sets anywhere claims that name first
-        reserved = frozenset(attr_list_anchor for index, line in enumerate(lines) for attr_list_anchor
+        reserved = frozenset(attr_list_anchor for index, line in enumerate(markdown_lines)
+                             for attr_list_anchor
                              in HtmlProoferPlugin.attr_list_anchors(line, True, attr_list, references,
                                                                     index in table_lines))
-        if anchor in HtmlProoferPlugin.heading_anchors(lines, strict_anchors, attr_list,
+        if anchor in HtmlProoferPlugin.heading_anchors(markdown_lines, strict_anchors, attr_list,
                                                        references, separator, reserved):
             return True
 
-        for index, line in enumerate(lines):
+        for index, (line, anchor_line) in enumerate(zip(markdown_lines, anchor_lines)):
             # Check for HTML anchors using id or name attributes
             # Multiple anchors can exist on a single line, so find all of them
-            for html_anchor in re.findall(HTML_LINK_PATTERN, line):
+            for html_anchor in re.findall(HTML_LINK_PATTERN, anchor_line):
                 if anchor == html_anchor:
                     return True
 
@@ -526,6 +537,23 @@ class HtmlProoferPlugin(BasePlugin):
                 if blanked[index] != '\n':
                     blanked[index] = ' '
         return ''.join(blanked).split('\n')
+
+    @staticmethod
+    def blank_html_blocks(lines: List[str]) -> List[str]:
+        """Blank out block-level HTML elements, whose content is raw HTML rather than Markdown."""
+        lines = list(lines)
+        open_tag = None
+        for i, line in enumerate(lines):
+            if open_tag is None:
+                start = HTML_BLOCK_START_PATTERN.match(line)
+                if start is None:
+                    continue
+                open_tag = start.group(1).lower()
+            lines[i] = ''
+            end = HTML_BLOCK_END_PATTERN.search(line)
+            if end is not None and end.group(1).lower() == open_tag:
+                open_tag = None
+        return lines
 
     @staticmethod
     def table_lines(lines: List[str]) -> Set[int]:

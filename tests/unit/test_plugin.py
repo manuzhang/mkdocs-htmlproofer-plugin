@@ -261,6 +261,16 @@ def test_get_url_status(empty_files, validate_external: bool):
         ('# Repeat\n\n# Other {#repeat}', 'repeat_1', True),
         ('Paragraph\n{#repeat}\n\n# Repeat', 'repeat', True),
         ('Paragraph\n{#repeat}\n\n# Repeat', 'repeat_1', True),
+        # An anchor written inside a block-level HTML element renders, as in the integration docs,
+        # even though Markdown within that element doesn't
+        ('<table>\n<tbody>\n<tr><td><a name="REGISTER"></a>REGISTER</td></tr>\n</tbody>\n</table>',
+         'REGISTER', True),
+        ('<div>\n<a id="inblock"></a>\n</div>', 'inblock', True),
+        # Python-Markdown's ordered lists use `1.`, so `1.` opens a container and `1)` doesn't
+        ('1. ordinary\n\n    # real\n', 'real', True),
+        # Neither of two brace groups ending a heading is applied, so both stay in its text
+        ('# Heading {literal} {#real}', 'heading-literal-real', True),
+        ('# Heading {.cls} {#real}', 'heading-cls-real', True),
         # A heading indented under a nested list is content, not code
         ('- outer\n\n    - inner\n\n        # Deep\n', 'deep', True),
         # Comment syntax within a code span is literal text
@@ -361,6 +371,13 @@ STRICT_ONLY_ANCHORS = [
     ('Text\n\n<!-- <a id="fake"></a> -->\n', 'fake'),
     # Code indented four columns past a list item's content is a code block
     ('- outer\n\n        # Eight\n', 'eight'),
+    # `1)` opens no list, so the indented line is a code block
+    ('1) ordinary\n\n    # fake\n', 'fake'),
+    # Markdown within a block-level HTML element is raw HTML, not a heading
+    ('<div>\n# fake\n</div>', 'fake'),
+    ('<div>\n\n# fake\n\n</div>', 'fake'),
+    # Neither of two brace groups ending a heading sets an id
+    ('# Heading {literal} {#real}', 'real'),
     # Only the last id of an attribute list is applied
     ('## Heading {#first #second}', 'first'),
 ]
