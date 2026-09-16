@@ -76,6 +76,8 @@ INLINE_END_PATTERN = re.compile(
 AUTOLINK_END_PATTERN = re.compile(r'<[A-Za-z][A-Za-z0-9+.\-]*\:[^<>\s]*>$|<[^<>\s@]+@[^<>\s]+>$')
 # Python-Markdown strips a heading's optional closing sequence of #'s before applying attr_list
 CLOSING_HASHES_PATTERN = re.compile(r'\s*\#+\s*$')
+# The toc extension gives each heading a unique id, suffixing repeats as in its own IDCOUNT_RE
+ID_COUNT_PATTERN = re.compile(r'^(.*)_([0-9]+)$')
 
 # Example emojis:
 #   :banana:
@@ -129,8 +131,10 @@ class HtmlProoferPlugin(BasePlugin):
     def __init__(self):
         self._local = threading.local()
         self.files = []
-        # Whether attribute lists are applied, rather than rendered as literal text
+        # How the enabled Markdown extensions render anchors, as set in `on_config`
         self.attr_list = True
+        self.tables = True
+        self.separator = '-'
         self.scheme_handlers = {
             "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
             "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
@@ -149,11 +153,21 @@ class HtmlProoferPlugin(BasePlugin):
         return session
 
     def on_config(self, config: Config) -> None:
-        # An attribute list is only applied when the optional attr_list extension is enabled,
-        # which may be configured by its short or its fully qualified name
-        self.attr_list = any(isinstance(extension, str)
-                             and (extension == 'attr_list' or extension.endswith('.attr_list'))
-                             for extension in config.get('markdown_extensions') or [])
+        # Attribute lists and tables are only rendered when their optional extensions are enabled
+        extensions = config.get('markdown_extensions') or []
+        self.attr_list = self.extension_enabled('attr_list', extensions)
+        self.tables = self.extension_enabled('tables', extensions)
+        # toc joins the words of a heading with its configured separator
+        mdx_configs = config.get('mdx_configs')
+        toc_config = mdx_configs.get('toc') if isinstance(mdx_configs, dict) else None
+        self.separator = toc_config.get('separator', '-') if isinstance(toc_config, dict) else '-'
+
+    @staticmethod
+    def extension_enabled(name: str, extensions: List) -> bool:
+        """Check for an extension, which may be configured by its short or qualified name."""
+        return any(isinstance(extension, str)
+                   and (extension == name or extension.endswith(f'.{name}'))
+                   for extension in extensions)
 
     def on_post_build(self, config: Config) -> None:
         if self.config['raise_error_after_finish'] and self.invalid_links:
@@ -305,7 +319,7 @@ class HtmlProoferPlugin(BasePlugin):
             return 0 if url[1:] in all_element_ids else 404
         else:
             is_valid = self.is_url_target_valid(url, src_path, files, self.config['strict_anchors'],
-                                                self.attr_list)
+                                                self.attr_list, self.tables, self.separator)
             url_status = 404
             if not is_valid and self.is_error(self.config, url, url_status):
                 log_warning(f"Unable to locate source file for: {url}")
@@ -314,7 +328,8 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def is_url_target_valid(url: str, src_path: str, files: Dict[str, File],
-                            strict_anchors: bool = False, attr_list: bool = True) -> bool:
+                            strict_anchors: bool = False, attr_list: bool = True,
+                            tables: bool = True, separator: str = '-') -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
@@ -332,7 +347,7 @@ class HtmlProoferPlugin(BasePlugin):
                 if source_file.page is None or source_file.page.markdown is None:
                     return False
                 if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, optional_anchor,
-                                                         strict_anchors, attr_list):
+                                                         strict_anchors, attr_list, tables, separator):
                     return False
 
         return True
@@ -370,32 +385,23 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def contains_anchor(markdown: str, anchor: str, strict_anchors: bool = False,
-                        attr_list: bool = True) -> bool:
+                        attr_list: bool = True, tables: bool = True, separator: str = '-') -> bool:
         """Check if a set of Markdown source text contains a heading that corresponds to a
         given anchor."""
         lines = markdown.splitlines()
+        # Headings, anchors and reference definitions within code blocks aren't rendered
+        rendered = HtmlProoferPlugin.blank_indented_code(HtmlProoferPlugin.blank_fenced_code(lines))
         if strict_anchors:
-            # Headings and anchors within code blocks aren't rendered, so they provide no anchor
-            lines = HtmlProoferPlugin.blank_indented_code(HtmlProoferPlugin.blank_fenced_code(lines))
-        references = frozenset(label.strip().lower()
-                               for label in REFERENCE_DEFINITION_PATTERN.findall(markdown))
-        table_lines = HtmlProoferPlugin.table_lines(lines)
-        previous_line = ''
-        for index, line in enumerate(lines):
-            # Markdown allows whitespace before headers and an arbitrary number of #'s.
-            heading_match = HEADING_PATTERN.match(line)
-            if heading_match is not None:
-                # Only an ATX heading has an optional closing sequence of #'s, which isn't rendered
-                heading = CLOSING_HASHES_PATTERN.sub('', heading_match.group(1))
-                if HtmlProoferPlugin.heading_matches_anchor(heading, anchor, strict_anchors,
-                                                            attr_list, references):
-                    return True
-            elif HtmlProoferPlugin.underlines_setext_heading(line, previous_line, strict_anchors):
-                if HtmlProoferPlugin.heading_matches_anchor(previous_line.strip(), anchor, strict_anchors,
-                                                            attr_list, references):
-                    return True
-            previous_line = line
+            lines = rendered
+        # Python-Markdown collapses the whitespace of a reference's label
+        references = frozenset(' '.join(label.split()).lower() for label
+                               in REFERENCE_DEFINITION_PATTERN.findall('\n'.join(rendered)))
+        if anchor in HtmlProoferPlugin.heading_anchors(lines, strict_anchors, attr_list,
+                                                       references, separator):
+            return True
 
+        table_lines = HtmlProoferPlugin.table_lines(lines) if tables else set()
+        for index, line in enumerate(lines):
             # Check for HTML anchors using id or name attributes
             # Multiple anchors can exist on a single line, so find all of them
             for html_anchor in re.findall(HTML_LINK_PATTERN, line):
@@ -416,7 +422,7 @@ class HtmlProoferPlugin(BasePlugin):
         if not previous_line.strip() or SETEXT_UNDERLINE_PATTERN.match(line) is None:
             return False
         # An indented line is code rather than heading text
-        return not (strict_anchors and previous_line.startswith(('    ', '\t')))
+        return not (strict_anchors and previous_line.expandtabs(4).startswith('    '))
 
     @staticmethod
     def blank_fenced_code(lines: List[str]) -> List[str]:
@@ -450,7 +456,9 @@ class HtmlProoferPlugin(BasePlugin):
             if not line.strip():
                 after_blank = True
                 continue
-            indent = len(line) - len(line.lstrip(' \t'))
+            # A tab indents by up to four columns, like the spaces it stands in for
+            expanded = line.expandtabs(4)
+            indent = len(expanded) - len(expanded.lstrip(' '))
             if indent == 0:
                 in_container = CONTAINER_PATTERN.match(line) is not None
                 in_code = False
@@ -488,7 +496,7 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def references_defined(text: str, references: FrozenSet[str]) -> bool:
         """Check that every reference a link or an image uses is defined, or it renders literally."""
-        return all((label.strip() or link_text.strip()).lower() in references
+        return all(' '.join((label.strip() or link_text).split()).lower() in references
                    for link_text, label in REFERENCE_USE_PATTERN.findall(text))
 
     @staticmethod
@@ -501,11 +509,13 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def attr_list_id(attrs: str) -> Optional[str]:
-        """Find the id an attribute list sets, whether as `#id` or as an `id=` attribute."""
-        match = ATTRLIST_ID_PATTERN.search(attrs)
-        if match is None:
+        """Find the id an attribute list sets, whether as `#id` or as an `id=` attribute.
+
+        attr_list applies the attributes in order, so a later id replaces an earlier one."""
+        matches = list(ATTRLIST_ID_PATTERN.finditer(attrs))
+        if not matches:
             return None
-        return next(group for group in match.groups() if group is not None)
+        return next(group for group in matches[-1].groups() if group is not None)
 
     @staticmethod
     def legacy_heading_anchor(heading: str) -> str:
@@ -569,32 +579,41 @@ class HtmlProoferPlugin(BasePlugin):
         return anchors
 
     @staticmethod
-    def heading_matches_anchor(heading: str, anchor: str, strict_anchors: bool = False,
-                               attr_list: bool = True,
-                               references: FrozenSet[str] = frozenset()) -> bool:
-        """Check if a Markdown heading text corresponds to a given anchor."""
-        if not strict_anchors and anchor == HtmlProoferPlugin.legacy_heading_anchor(heading):
-            return True
+    def heading_explicit_id(heading: str, attr_list: bool = True,
+                            references: FrozenSet[str] = frozenset()) -> Optional[str]:
+        """The id an attribute list sets on a heading, replacing the slug toc would generate.
 
-        # Headings are allowed to have attr_list after them, of the form:
-        # # Heading { #testanchor .testclass }
-        # # Heading {: #testanchor .testclass }
-        # # Heading {.testclass #testanchor}
-        # # Heading {.testclass}
-        # these can override the headings anchor id, or alternatively just provide additional class etc.
-        # attr_list applies every list directly following an inline element, and a single one at the end
-        # of the heading. Any other one, e.g. a leading list, is rendered as literal text and slugified.
+        Headings are allowed to have attr_list after them, of the form:
+        # Heading { #testanchor .testclass }
+        # Heading {: #testanchor .testclass }
+        # Heading {.testclass #testanchor}
+        # Heading {.testclass}
+        attr_list applies every list directly following an inline element, and a single one at the
+        end of the heading. Any other one, e.g. a leading list, is rendered as literal text.
+        """
+        if not attr_list:
+            return None
+        masked = HtmlProoferPlugin.mask_code_spans(
+            HtmlProoferPlugin.remove_inline_attr_lists(heading, references))
+        if len(ATTRLIST_PATTERN.findall(masked)) != 1:
+            return None
+        heading_attr_list = HEADING_ATTRLIST_PATTERN.search(masked)
+        if heading_attr_list is None:
+            return None
+        return HtmlProoferPlugin.attr_list_id(heading_attr_list.group(1))
+
+    @staticmethod
+    def heading_slug(heading: str, attr_list: bool = True, references: FrozenSet[str] = frozenset(),
+                     separator: str = '-') -> str:
+        """The slug toc generates for a heading which sets no id of its own."""
         if attr_list:
             heading = HtmlProoferPlugin.remove_inline_attr_lists(heading, references)
             masked = HtmlProoferPlugin.mask_code_spans(heading)
             if len(ATTRLIST_PATTERN.findall(masked)) == 1:
-                heading_attr_list = HEADING_ATTRLIST_PATTERN.search(masked)
-                if heading_attr_list is not None:
-                    heading_id = HtmlProoferPlugin.attr_list_id(heading_attr_list.group(1))
-                    if heading_id is not None:
-                        # The id replaces the slug which would otherwise be generated
-                        return anchor == heading_id
-                    heading = heading[:heading_attr_list.start()]
+                trailing_attr_list = HEADING_ATTRLIST_PATTERN.search(masked)
+                if trailing_attr_list is not None:
+                    # A trailing attribute list is applied rather than rendered as text
+                    heading = heading[:trailing_attr_list.start()]
 
         def render_inline(text: str) -> str:
             # Headings are allowed to have images after them, of the form:
@@ -613,13 +632,51 @@ class HtmlProoferPlugin(BasePlugin):
             parts.append(code_span.group())
             end = code_span.end()
         parts.append(render_inline(heading[end:]))
-        heading = ''.join(parts)
 
         # Headings are allowed to have emojis in them under certain Mkdocs themes.
         # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown-extensions/#emoji
-        heading = re.sub(EMOJI_PATTERN, '', heading)
+        return slugify(re.sub(EMOJI_PATTERN, '', ''.join(parts)), separator)
 
-        return anchor == slugify(heading, '-')
+    @staticmethod
+    def unique_id(anchor: str, used: Set[str]) -> str:
+        """Suffix an id until it's unique, as toc's own `unique` does, and record it."""
+        while anchor in used or not anchor:
+            count = ID_COUNT_PATTERN.match(anchor)
+            anchor = f'{count.group(1)}_{int(count.group(2)) + 1}' if count else f'{anchor}_1'
+        used.add(anchor)
+        return anchor
+
+    @staticmethod
+    def heading_anchors(lines: List[str], strict_anchors: bool = False, attr_list: bool = True,
+                        references: FrozenSet[str] = frozenset(), separator: str = '-') -> Set[str]:
+        """The anchors a page's headings provide, as attr_list and toc generate them."""
+        headings = []
+        previous_line = ''
+        for line in lines:
+            # Markdown allows whitespace before headers and an arbitrary number of #'s.
+            heading_match = HEADING_PATTERN.match(line)
+            if heading_match is not None:
+                # Only an ATX heading has an optional closing sequence of #'s, which isn't rendered
+                headings.append(CLOSING_HASHES_PATTERN.sub('', heading_match.group(1)))
+            elif HtmlProoferPlugin.underlines_setext_heading(line, previous_line, strict_anchors):
+                # Setext headings are underlined with ='s or -'s on the line after the heading text
+                headings.append(previous_line.strip())
+            previous_line = line
+
+        explicit_ids = [HtmlProoferPlugin.heading_explicit_id(heading, attr_list, references)
+                        for heading in headings]
+        # attr_list runs before toc, so an id it sets claims that name before any generated slug
+        used = {anchor for anchor in explicit_ids if anchor is not None}
+        anchors = set(used)
+        for heading, explicit_id in zip(headings, explicit_ids):
+            if explicit_id is None:
+                slug = HtmlProoferPlugin.heading_slug(heading, attr_list, references, separator)
+                anchors.add(HtmlProoferPlugin.unique_id(slug, used))
+                if not strict_anchors:
+                    anchors.add(slug)
+            if not strict_anchors:
+                anchors.add(HtmlProoferPlugin.legacy_heading_anchor(heading))
+        return anchors
 
     @staticmethod
     def bad_url(url_status: int) -> bool:

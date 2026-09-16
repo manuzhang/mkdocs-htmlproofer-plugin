@@ -246,6 +246,19 @@ def test_get_url_status(empty_files, validate_external: bool):
         ('## Heading {id="foo"}', 'foo', True),
         # A label may hold balanced brackets
         ('# [outer [inner]](target)', 'outer-inner', True),
+        # The last id in an attribute list wins
+        ('## Heading {#first #second}', 'second', True),
+        # A reference label matches however its whitespace is written
+        ('# Heading [text][a  b]\n\n[a b]: t.html', 'heading-text', True),
+        # A definition within a code block doesn't define the reference, in either mode
+        ('# Heading [text][ref]\n\n```\n[ref]: t.html\n```', 'heading-textref', True),
+        ('# Heading [text][ref]\n\n```\n[ref]: t.html\n```', 'heading-text', False),
+        # The toc extension suffixes repeated headings
+        ('# Repeat\n\n# Repeat', 'repeat', True),
+        ('# Repeat\n\n# Repeat', 'repeat_1', True),
+        # An id set by attr_list claims its name before generated slugs
+        ('# Repeat\n\n# Other {#repeat}', 'repeat', True),
+        ('# Repeat\n\n# Other {#repeat}', 'repeat_1', True),
         # A destination may contain balanced parentheses
         ('# Heading ![alt](https://example.com/a_(b).png)', 'heading', True),
         ('# Heading [![alt](https://example.com/a_(b).png)](https://example.com/x_(y))', 'heading', True),
@@ -318,6 +331,10 @@ STRICT_ONLY_ANCHORS = [
     ('# Heading [text][missing]{#fake}', 'fake'),
     # A code block nested in a list item renders no heading
     ('- item\n\n        # fake\n', 'fake'),
+    # A tab indents a code block just as four spaces do
+    ('Intro\n\n\t# fake\n\nOutro', 'fake'),
+    # Only the last id of an attribute list is applied
+    ('## Heading {#first #second}', 'first'),
 ]
 
 
@@ -345,20 +362,63 @@ def test_contains_anchor__without_attr_list(plugin, markdown, anchor, expected):
     assert plugin.contains_anchor(markdown, anchor, strict_anchors=True, attr_list=False) == expected
 
 
+def test_contains_anchor__without_tables(plugin):
+    # Without the extension a table-shaped line is an ordinary paragraph, whose pipes end no cell
+    table = '| A | B |\n|---|---|\n| A {#a} | B {#b} |'
+
+    assert plugin.contains_anchor(table, 'a', strict_anchors=True) is True
+    assert plugin.contains_anchor(table, 'a', strict_anchors=True, tables=False) is False
+
+
 @pytest.mark.parametrize(
-    'markdown_extensions, expected', [
-        (['attr_list', 'toc'], True),
-        (['toc'], False),
-        ([], False),
+    'separator, anchor, expected', [
+        ('-', 'sub-heading', True),
+        ('-', 'sub_heading', False),
+        ('_', 'sub_heading', True),
+        ('_', 'sub-heading', False),
     ]
 )
-def test_on_config__attr_list(plugin, markdown_extensions, expected):
+def test_contains_anchor__toc_separator(plugin, separator, anchor, expected):
+    assert plugin.contains_anchor('## Sub Heading', anchor, strict_anchors=True,
+                                  separator=separator) == expected
+
+
+@pytest.mark.parametrize(
+    'markdown_extensions, attr_list, tables', [
+        (['attr_list', 'tables', 'toc'], True, True),
+        (['markdown.extensions.attr_list'], True, False),
+        (['tables'], False, True),
+        ([], False, False),
+    ]
+)
+def test_on_config__extensions(plugin, markdown_extensions, attr_list, tables):
     config = Mock(spec=Config)
-    config.get.return_value = markdown_extensions
+    config.get.side_effect = lambda key, default=None: {
+        'markdown_extensions': markdown_extensions, 'mdx_configs': {}
+    }.get(key, default)
 
     plugin.on_config(config)
 
-    assert plugin.attr_list == expected
+    assert plugin.attr_list == attr_list
+    assert plugin.tables == tables
+
+
+@pytest.mark.parametrize(
+    'mdx_configs, expected', [
+        ({}, '-'),
+        ({'toc': {}}, '-'),
+        ({'toc': {'separator': '_'}}, '_'),
+    ]
+)
+def test_on_config__toc_separator(plugin, mdx_configs, expected):
+    config = Mock(spec=Config)
+    config.get.side_effect = lambda key, default=None: {
+        'markdown_extensions': ['toc'], 'mdx_configs': mdx_configs
+    }.get(key, default)
+
+    plugin.on_config(config)
+
+    assert plugin.separator == expected
 
 
 @pytest.mark.parametrize('strict_anchors', (False, True))
