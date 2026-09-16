@@ -3,14 +3,16 @@ name: Dependabot
 on: pull_request
 
 jobs:
-  auto-merge:
+  metadata:
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'manuzhang/mkdocs-htmlproofer-plugin'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Dependabot proposes updates to `fetch-metadata` itself, and a pull_request run executes the
+    # proposed version, so run it without any write access.
     permissions:
-      actions: read
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
+    outputs:
+      auto-merge: ${{ steps.check.outputs.auto-merge }}
 
     steps:
       - name: Fetch Dependabot metadata
@@ -31,18 +33,32 @@ jobs:
              [ "$UPDATE_TYPE" = 'version-update:semver-patch' ]; then
             echo 'auto-merge=true' >> "$GITHUB_OUTPUT"
           fi
+
+  auto-merge:
+    needs: metadata
+    if: needs.metadata.outputs.auto-merge == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Only the GitHub CLI runs with these permissions, no third-party actions
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: write
+    env:
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
       - name: Wait for CI
         # `gh pr merge --auto` waits only for required status checks, and this branch requires none,
         # so wait for the CI run of this commit here. Watching that run rather than all of the PR's
         # checks avoids waiting for this job itself. CI also runs on `push`, so look for the run of
         # the `pull_request` event, which tests the merge with the base branch.
-        if: steps.check.outputs.auto-merge == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           for _ in $(seq 30); do
-            run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$HEAD_SHA" \
+            run_id=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$HEAD_SHA" \
               --jq '.workflow_runs[0].id // empty')
             if [ -n "$run_id" ]; then
               break
@@ -55,9 +71,7 @@ jobs:
           fi
           gh run watch "$run_id" --exit-status --interval 30
       - name: Approve and merge
-        if: steps.check.outputs.auto-merge == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -65,7 +79,7 @@ jobs:
         run: |
           # CI tested this head against this base. If the base moved on meanwhile, leave the PR to
           # the run of Dependabot's rebase, which is tested against the new base.
-          base_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BASE_REF" --jq '.sha')
+          base_sha=$(gh api "repos/$GH_REPO/commits/$BASE_REF" --jq '.sha')
           if [ "$base_sha" != "$BASE_SHA" ]; then
             echo "$BASE_REF moved from $BASE_SHA to $base_sha since CI ran, so not merging"
             exit 0
