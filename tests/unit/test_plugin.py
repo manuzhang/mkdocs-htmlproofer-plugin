@@ -256,9 +256,17 @@ def test_get_url_status(empty_files, validate_external: bool):
         # The toc extension suffixes repeated headings
         ('# Repeat\n\n# Repeat', 'repeat', True),
         ('# Repeat\n\n# Repeat', 'repeat_1', True),
-        # An id set by attr_list claims its name before generated slugs
+        # An id set by attr_list claims its name before generated slugs, wherever it's set
         ('# Repeat\n\n# Other {#repeat}', 'repeat', True),
         ('# Repeat\n\n# Other {#repeat}', 'repeat_1', True),
+        ('Paragraph\n{#repeat}\n\n# Repeat', 'repeat', True),
+        ('Paragraph\n{#repeat}\n\n# Repeat', 'repeat_1', True),
+        # A block quote's content is rendered as Markdown
+        ('> # Quoted heading\n', 'quoted-heading', True),
+        ('> Paragraph\n> {#quotedid}\n', 'quotedid', True),
+        # An image written as a shortcut reference renders when its label is defined
+        ('# Heading ![alt]\n\n[alt]: i.png', 'heading', True),
+        ('# Heading ![alt]', 'heading-alt', True),
         # A destination may contain balanced parentheses
         ('# Heading ![alt](https://example.com/a_(b).png)', 'heading', True),
         ('# Heading [![alt](https://example.com/a_(b).png)](https://example.com/x_(y))', 'heading', True),
@@ -333,6 +341,13 @@ STRICT_ONLY_ANCHORS = [
     ('- item\n\n        # fake\n', 'fake'),
     # A tab indents a code block just as four spaces do
     ('Intro\n\n\t# fake\n\nOutro', 'fake'),
+    # attr_list applies a trailing list to a heading or a table cell, but not to a paragraph,
+    # a list item or a definition, where it stays literal text
+    ('Paragraph {#inline}', 'inline'),
+    ('- item {#listitem}', 'listitem'),
+    ('Term\n\n:   def {#defitem}', 'defitem'),
+    # An anchor within an HTML comment isn't rendered
+    ('Text\n\n<!-- <a id="fake"></a> -->\n', 'fake'),
     # Only the last id of an attribute list is applied
     ('## Heading {#first #second}', 'first'),
 ]
@@ -362,6 +377,15 @@ def test_contains_anchor__without_attr_list(plugin, markdown, anchor, expected):
     assert plugin.contains_anchor(markdown, anchor, strict_anchors=True, attr_list=False) == expected
 
 
+def test_contains_anchor__without_admonitions(plugin):
+    # Without an extension rendering it, `!!!` opens no container and the indented lines are code
+    admonition = '!!! note\n\n    ## Inner heading\n'
+
+    assert plugin.contains_anchor(admonition, 'inner-heading', strict_anchors=True) is True
+    assert plugin.contains_anchor(admonition, 'inner-heading', strict_anchors=True,
+                                  containers=False) is False
+
+
 def test_contains_anchor__without_tables(plugin):
     # Without the extension a table-shaped line is an ordinary paragraph, whose pipes end no cell
     table = '| A | B |\n|---|---|\n| A {#a} | B {#b} |'
@@ -384,14 +408,14 @@ def test_contains_anchor__toc_separator(plugin, separator, anchor, expected):
 
 
 @pytest.mark.parametrize(
-    'markdown_extensions, attr_list, tables', [
-        (['attr_list', 'tables', 'toc'], True, True),
-        (['markdown.extensions.attr_list'], True, False),
-        (['tables'], False, True),
-        ([], False, False),
+    'markdown_extensions, attr_list, tables, containers', [
+        (['attr_list', 'tables', 'admonition'], True, True, True),
+        (['markdown.extensions.attr_list'], True, False, False),
+        (['tables', 'pymdownx.details'], False, True, True),
+        ([], False, False, False),
     ]
 )
-def test_on_config__extensions(plugin, markdown_extensions, attr_list, tables):
+def test_on_config__extensions(plugin, markdown_extensions, attr_list, tables, containers):
     config = Mock(spec=Config)
     config.get.side_effect = lambda key, default=None: {
         'markdown_extensions': markdown_extensions, 'mdx_configs': {}
@@ -401,6 +425,7 @@ def test_on_config__extensions(plugin, markdown_extensions, attr_list, tables):
 
     assert plugin.attr_list == attr_list
     assert plugin.tables == tables
+    assert plugin.containers == containers
 
 
 @pytest.mark.parametrize(
@@ -408,6 +433,9 @@ def test_on_config__extensions(plugin, markdown_extensions, attr_list, tables):
         ({}, '-'),
         ({'toc': {}}, '-'),
         ({'toc': {'separator': '_'}}, '_'),
+        # MkDocs keys the configuration by the name the extension was enabled under
+        ({'markdown.extensions.toc': {'separator': '_'}}, '_'),
+        ({'toc': None}, '-'),
     ]
 )
 def test_on_config__toc_separator(plugin, mdx_configs, expected):
