@@ -224,6 +224,18 @@ def test_get_url_status(empty_files, validate_external: bool):
         (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
         ('Paragraph text\n  {#paragraphanchor}', 'paragraphanchor', True),
         ('| Cell {#cellanchor} | Other |', 'cellanchor', True),
+        # Each table cell is its own element, so an attribute list may end each of them
+        ('| A {#a} | B {#b} |', 'a', True),
+        ('| A {#a} | B {#b} |', 'b', True),
+        # A destination may contain balanced parentheses
+        ('# Heading ![alt](https://example.com/a_(b).png)', 'heading', True),
+        ('# Heading [![alt](https://example.com/a_(b).png)](https://example.com/x_(y))', 'heading', True),
+        # An escaped bracket renders literally, so this is neither a link nor an image
+        (r'# Heading \[text](href)', 'heading-texthref', True),
+        (r'# Heading \[text](href)', 'heading-text', False),
+        (r'# Heading \![alt](src)', 'heading-alt', True),
+        # Only an ATX heading has a closing sequence of #'s
+        ('Title {#id} ##\n---', 'title-id', True),
         # HTML anchor with id attribute
         (r'<a id="myanchor"></a>', 'myanchor', True),
         (r'<a id="myanchor">Link text</a>', 'myanchor', True),
@@ -271,6 +283,8 @@ STRICT_ONLY_ANCHORS = [
     ('````markdown\n```\n# Nested\n```\n````', 'nested'),
     ('    ```python\n    # comment\n    ```\n# Heading', 'comment'),
     ('    Fake\n---', 'fake'),
+    # The closing #'s of a Setext heading are content, so its attribute list isn't trailing
+    ('Title {#id} ##\n---', 'id'),
 ]
 
 

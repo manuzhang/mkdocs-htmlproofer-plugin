@@ -31,11 +31,15 @@ HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
 FENCE_PATTERN = re.compile(r'\s*(`{3,}|~{3,})')
 HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
+# A destination, which may hold one level of balanced parentheses, e.g. (foo_(bar).png), or a
+# reference, e.g. [ref]. An escaped bracket doesn't open an image or a link, but renders literally.
+_DESTINATION = r'(?:\((?:[^\(\)]|\([^\(\)]*\))*\)|\[[^\]]*\])'
+_IMAGE = rf'(?<!\\)\!\[[^\]]*\]{_DESTINATION}'
 # An image, optionally wrapped in a link, e.g. ![alt](src), ![alt][ref], [![alt](src)](href)
 # or [![alt][ref]][target]
-IMAGE_PATTERN = re.compile(r'\[?\!\[[^\]]*\](?:\([^\)]*\)|\[[^\]]*\])\]?(?:\([^\)]*\)|\[[^\]]*\])?')
+IMAGE_PATTERN = re.compile(rf'(?<!\\)\[{_IMAGE}\]{_DESTINATION}?|{_IMAGE}')
 # A link, e.g. [text](href) or [text][ref], of which only the text is rendered
-LINK_PATTERN = re.compile(r'\[([^\]]*)\](?:\([^\)]*\)|\[[^\]]*\])')
+LINK_PATTERN = re.compile(rf'(?<!\\)\[([^\]]*)\]{_DESTINATION}')
 LOCAL_PATTERNS = [
     re.compile(rf'https?://{local}')
     for local in ('localhost', '127.0.0.1', 'app_server')
@@ -349,7 +353,9 @@ class HtmlProoferPlugin(BasePlugin):
             # Markdown allows whitespace before headers and an arbitrary number of #'s.
             heading_match = HEADING_PATTERN.match(line)
             if heading_match is not None:
-                if HtmlProoferPlugin.heading_matches_anchor(heading_match.group(1), anchor, strict_anchors):
+                # Only an ATX heading has an optional closing sequence of #'s, which isn't rendered
+                heading = CLOSING_HASHES_PATTERN.sub('', heading_match.group(1))
+                if HtmlProoferPlugin.heading_matches_anchor(heading, anchor, strict_anchors):
                     return True
             elif HtmlProoferPlugin.underlines_setext_heading(line, previous_line, strict_anchors):
                 if HtmlProoferPlugin.heading_matches_anchor(previous_line.strip(), anchor, strict_anchors):
@@ -429,7 +435,10 @@ class HtmlProoferPlugin(BasePlugin):
         anchors = [] if strict_anchors else re.findall(ATTRLIST_ANCHOR_PATTERN, line)
         matches = list(ATTRLIST_PATTERN.finditer(line))
         follows_element = [HtmlProoferPlugin.follows_inline_element(line[:m.start()]) for m in matches]
-        for match, follows in zip(matches, follows_element):
+        # Each cell of a table row is its own element, so count the lists ending one per cell
+        cells = [line.count('|', 0, m.start()) for m in matches]
+        ending_cells = [cell for cell, follows in zip(cells, follows_element) if not follows]
+        for match, follows, cell in zip(matches, follows_element, cells):
             anchor_match = ATTRLIST_ID_PATTERN.search(match.group())
             if anchor_match is None:
                 continue
@@ -439,7 +448,7 @@ class HtmlProoferPlugin(BasePlugin):
             own_line = not before.strip()
             # attr_list needs a space before a list which ends an element, and applies none of several
             ends_element = before[-1:].isspace() and (not after.strip() or after.lstrip().startswith('|'))
-            only_one = follows_element.count(False) == 1
+            only_one = ending_cells.count(cell) == 1
             if follows or ((own_line or ends_element) and only_one):
                 anchors.append(anchor_match.group(1))
         return anchors
@@ -458,7 +467,6 @@ class HtmlProoferPlugin(BasePlugin):
         # these can override the headings anchor id, or alternatively just provide additional class etc.
         # attr_list applies every list directly following an inline element, and a single one at the end
         # of the heading. Any other one, e.g. a leading list, is rendered as literal text and slugified.
-        heading = CLOSING_HASHES_PATTERN.sub('', heading)
         heading = HtmlProoferPlugin.remove_inline_attr_lists(heading)
         if len(ATTRLIST_PATTERN.findall(heading)) == 1:
             heading_attr_list = HEADING_ATTRLIST_PATTERN.search(heading)
