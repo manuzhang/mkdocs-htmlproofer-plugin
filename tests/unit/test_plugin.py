@@ -237,10 +237,15 @@ def test_get_url_status(empty_files, validate_external: bool):
         ('paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
         (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
         ('Paragraph text\n  {#paragraphanchor}', 'paragraphanchor', True),
-        ('| Cell {#cellanchor} | Other |', 'cellanchor', True),
+        ('| A | B |\n|---|---|\n| Cell {#cellanchor} | Other |', 'cellanchor', True),
         # Each table cell is its own element, so an attribute list may end each of them
-        ('| A {#a} | B {#b} |', 'a', True),
-        ('| A {#a} | B {#b} |', 'b', True),
+        ('| A | B |\n|---|---|\n| A {#a} | B {#b} |', 'a', True),
+        ('| A | B |\n|---|---|\n| A {#a} | B {#b} |', 'b', True),
+        # An id written as an attribute rather than as the `#id` shorthand
+        ('## Heading {id=foo}', 'foo', True),
+        ('## Heading {id="foo"}', 'foo', True),
+        # A label may hold balanced brackets
+        ('# [outer [inner]](target)', 'outer-inner', True),
         # A destination may contain balanced parentheses
         ('# Heading ![alt](https://example.com/a_(b).png)', 'heading', True),
         ('# Heading [![alt](https://example.com/a_(b).png)](https://example.com/x_(y))', 'heading', True),
@@ -305,6 +310,14 @@ STRICT_ONLY_ANCHORS = [
     ('# Heading (text){#id}', 'id'),
     # An attribute list within a code span is literal text
     ('# Example `{#codeid}` text', 'codeid'),
+    # Pipes only end a cell within a table, and a standalone list must occupy the whole line
+    ('| A {#fake} | B |', 'fake'),
+    ('{#fake} and more text', 'fake'),
+    # Escaping the delimiter leaves emphasis, and an undefined reference a link, as literal text
+    (r'# Heading \*not em\*{#fake}', 'fake'),
+    ('# Heading [text][missing]{#fake}', 'fake'),
+    # A code block nested in a list item renders no heading
+    ('- item\n\n        # fake\n', 'fake'),
 ]
 
 
