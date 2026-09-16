@@ -185,6 +185,7 @@ def test_get_url_status(empty_files, validate_external: bool):
         (r'## {#customanchor} Heading', 'customanchor-heading', True),
         (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
         (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this', True),
+        ('# Heading [![alt][img]][target]', 'heading', True),
         # A linked image, as in the README's own heading
         ('# mkdocs-htmlproofer-plugin [![PyPI - Version](https://img.shields.io/pypi/v/x.svg)]'
          '(https://pypi.org/project/x)', 'mkdocs-htmlproofer-plugin', True),
@@ -192,6 +193,23 @@ def test_get_url_status(empty_files, validate_external: bool):
         (r'## Heading {.customclass}', 'heading-customclass', False),
         (r'## Heading {#customanchor}', 'heading', False),
         (r'## Heading {.a} and {.b}', 'heading-a-and-b', True),
+        (r'## Heading {#a} {#b}', 'heading-a-b', True),
+        (r'## Heading {#a} {#b}', 'b', False),
+        # Only a link's text ends up in the heading
+        ('# Heading [text](href)', 'heading-text', True),
+        # Every attribute list directly following an inline element applies
+        (r'## *one*{.red} and *two*{.blue}', 'one-and-two', True),
+        ('## <https://example.com>{#target}', 'target', True),
+        ('## <https://example.com>{#target}', 'httpsexamplecom', True),
+        # An id is a whole token, so this one sets a title rather than an id
+        (r'## Heading {title="#tooltip"}', 'heading', True),
+        (r'## Heading {title="#tooltip"}', 'tooltip', False),
+        (r'## Heading {title="#tooltip" #real}', 'real', True),
+        # A closing sequence of #'s is stripped before the attribute list is applied
+        (r'## Heading {.class} ##', 'heading', True),
+        (r'## Heading {#anchor} ##', 'anchor', True),
+        (r'## Heading{#nospace} ##', 'headingnospace', True),
+        (r'## Heading ##', 'heading', True),
         (r'## Heading{#nospace}', 'headingnospace', True),
         (r'## Heading{#nospace}', 'nospace', False),
         ('Setext {#setextid}\n---', 'setextid', True),

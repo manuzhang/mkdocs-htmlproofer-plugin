@@ -31,20 +31,26 @@ HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
 FENCE_PATTERN = re.compile(r'\s*(`{3,}|~{3,})')
 HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
-# An image, optionally wrapped in a link, e.g. ![alt](src), ![alt][ref] or [![alt](src)](href)
-IMAGE_PATTERN = re.compile(r'\[?\!\[[^\]]*\](?:\([^\)]*\)|\[[^\]]*\])\]?(?:\([^\)]*\))?')
+# An image, optionally wrapped in a link, e.g. ![alt](src), ![alt][ref], [![alt](src)](href)
+# or [![alt][ref]][target]
+IMAGE_PATTERN = re.compile(r'\[?\!\[[^\]]*\](?:\([^\)]*\)|\[[^\]]*\])\]?(?:\([^\)]*\)|\[[^\]]*\])?')
+# A link, e.g. [text](href) or [text][ref], of which only the text is rendered
+LINK_PATTERN = re.compile(r'\[([^\]]*)\](?:\([^\)]*\)|\[[^\]]*\])')
 LOCAL_PATTERNS = [
     re.compile(rf'https?://{local}')
     for local in ('localhost', '127.0.0.1', 'app_server')
 ]
-ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
 ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
 # An attribute list is applied to a heading when it ends it, as in attr_list's own HEADER_RE
 HEADING_ATTRLIST_PATTERN = re.compile(r'[ ]+\{\:?([^\}\n]*)\}[ ]*$')
-ATTRLIST_ID_PATTERN = re.compile(r'\#([^\s\}]+)')
-# ... or to an inline element it directly follows, which ends with one of these characters
+# An id is a whole token within an attribute list, so a `#` inside e.g. {title="#tooltip"} isn't one
+ATTRLIST_ID_PATTERN = re.compile(r'(?:^|[\s\{\:])\#([^\s\}]+)')
+# An attribute list also applies to an inline element it directly follows, which ends with one of
+# these characters, or with the `>` of an autolink. It isn't applied after raw HTML like </em>.
 ELEMENT_END_CHARS = ')]*_`'
-INLINE_ATTRLIST_PATTERN = re.compile(rf'(?<=[{re.escape(ELEMENT_END_CHARS)}])\{{\:?[^\}}\n]*\}}')
+AUTOLINK_END_PATTERN = re.compile(r'<[A-Za-z][A-Za-z0-9+.\-]*\:[^<>\s]*>$|<[^<>\s@]+@[^<>\s]+>$')
+# Python-Markdown strips a heading's optional closing sequence of #'s before applying attr_list
+CLOSING_HASHES_PATTERN = re.compile(r'\s*\#+\s*$')
 
 # Example emojis:
 #   :banana:
@@ -376,19 +382,42 @@ class HtmlProoferPlugin(BasePlugin):
         return lines
 
     @staticmethod
+    def follows_inline_element(before: str) -> bool:
+        """Check if an attribute list directly following this text is applied to an inline element."""
+        return bool(before) and (before[-1] in ELEMENT_END_CHARS
+                                 or AUTOLINK_END_PATTERN.search(before) is not None)
+
+    @staticmethod
+    def remove_inline_attr_lists(text: str) -> str:
+        """Remove the attribute lists applied to inline elements, which aren't rendered as text."""
+        parts = []
+        end = 0
+        for match in ATTRLIST_PATTERN.finditer(text):
+            if HtmlProoferPlugin.follows_inline_element(text[:match.start()]):
+                parts.append(text[end:match.start()])
+                end = match.end()
+        parts.append(text[end:])
+        return ''.join(parts)
+
+    @staticmethod
     def attr_list_anchors(line: str) -> List[str]:
         """Find the anchors set by attribute lists in a line of Markdown."""
         anchors = []
-        for match in ATTRLIST_ANCHOR_PATTERN.finditer(line):
+        matches = list(ATTRLIST_PATTERN.finditer(line))
+        follows_element = [HtmlProoferPlugin.follows_inline_element(line[:m.start()]) for m in matches]
+        for match, follows in zip(matches, follows_element):
+            anchor_match = ATTRLIST_ID_PATTERN.search(match.group())
+            if anchor_match is None:
+                continue
             before, after = line[:match.start()], line[match.end():]
-            # An attribute list only applies when it directly follows an element, stands on its own line,
-            # or ends a heading or table cell. Otherwise, it's rendered as literal text.
-            directly_follows = bool(before) and before[-1] in ELEMENT_END_CHARS
+            # An attribute list only applies when it directly follows an inline element, stands on its
+            # own line, or ends a heading or table cell. Otherwise, it's rendered as literal text.
             own_line = not before.strip()
-            # attr_list needs a space before a list which ends an element
+            # attr_list needs a space before a list which ends an element, and applies none of several
             ends_element = before[-1:].isspace() and (not after.strip() or after.lstrip().startswith('|'))
-            if directly_follows or own_line or ends_element:
-                anchors.append(match.group(1))
+            only_one = follows_element.count(False) == 1
+            if follows or ((own_line or ends_element) and only_one):
+                anchors.append(anchor_match.group(1))
         return anchors
 
     @staticmethod
@@ -400,13 +429,13 @@ class HtmlProoferPlugin(BasePlugin):
         # # Heading {.testclass #testanchor}
         # # Heading {.testclass}
         # these can override the headings anchor id, or alternatively just provide additional class etc.
-        # attr_list applies a single such list, either at the end of the heading or directly following an
-        # inline element. Any other one, e.g. a leading list, is rendered as literal text and slugified.
+        # attr_list applies every list directly following an inline element, and a single one at the end
+        # of the heading. Any other one, e.g. a leading list, is rendered as literal text and slugified.
+        heading = CLOSING_HASHES_PATTERN.sub('', heading)
+        heading = HtmlProoferPlugin.remove_inline_attr_lists(heading)
         if len(ATTRLIST_PATTERN.findall(heading)) == 1:
             heading_attr_list = HEADING_ATTRLIST_PATTERN.search(heading)
-            if heading_attr_list is None:
-                heading = INLINE_ATTRLIST_PATTERN.sub('', heading)
-            else:
+            if heading_attr_list is not None:
                 heading_id = ATTRLIST_ID_PATTERN.search(heading_attr_list.group(1))
                 if heading_id is not None:
                     # The id replaces the slug which would otherwise be generated
@@ -417,6 +446,9 @@ class HtmlProoferPlugin(BasePlugin):
         # # Heading [![Image](image-link)] or ![Image][image-reference]
         # But these images are not included in the generated anchor, so remove them.
         heading = re.sub(IMAGE_PATTERN, '', heading)
+
+        # Of a link, only its text is rendered into the heading, not its target.
+        heading = LINK_PATTERN.sub(r'\1', heading)
 
         # Headings are allowed to have emojis in them under certain Mkdocs themes.
         # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown-extensions/#emoji
