@@ -51,9 +51,10 @@ CODE_SPAN_PATTERN = re.compile(r'(?P<backticks>`+)(?:(?!(?P=backticks))[\s\S])+(
 # A reference-style link or image only renders as one when its label is defined
 REFERENCE_DEFINITION_PATTERN = re.compile(r'^ {0,3}\[([^\]]+)\]:', re.MULTILINE)
 REFERENCE_USE_PATTERN = re.compile(r'\[([^\]]*)\]\[([^\]]*)\]')
-# A list item or admonition, whose indented content is Markdown rather than a code block
+# A list item or admonition, whose indented content is Markdown rather than a code block.
+# `!!!` needs the admonition extension to render, and `???` the details extension.
 LIST_ITEM_PATTERN = re.compile(r'(?:[-*+]\s|\d+[.)]\s)')
-ADMONITION_PATTERN = re.compile(r'(?:!!!|\?\?\?)')
+CONTAINER_MARKERS = {'!!!': 'admonition', '???': 'details'}
 # Markdown within an HTML comment isn't rendered, and a block quote's content is
 HTML_COMMENT_PATTERN = re.compile(r'<!--[\s\S]*?-->')
 BLOCKQUOTE_PATTERN = re.compile(r'^ {0,3}(?:> ?)+')
@@ -140,7 +141,7 @@ class HtmlProoferPlugin(BasePlugin):
         # How the enabled Markdown extensions render anchors, as set in `on_config`
         self.attr_list = True
         self.tables = True
-        self.containers = True
+        self.containers = frozenset(CONTAINER_MARKERS)
         self.separator = '-'
         self.scheme_handlers = {
             "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
@@ -164,10 +165,10 @@ class HtmlProoferPlugin(BasePlugin):
         extensions = config.get('markdown_extensions') or []
         self.attr_list = self.extension_enabled('attr_list', extensions)
         self.tables = self.extension_enabled('tables', extensions)
-        # `!!!` only opens an admonition, whose content is Markdown rather than code, when one of
-        # the extensions rendering it is enabled
-        self.containers = (self.extension_enabled('admonition', extensions)
-                           or self.extension_enabled('details', extensions))
+        # A marker only opens a container, whose content is Markdown rather than code, when the
+        # extension rendering that marker is enabled
+        self.containers = frozenset(marker for marker, extension in CONTAINER_MARKERS.items()
+                                    if self.extension_enabled(extension, extensions))
         # toc joins the words of a heading with its configured separator
         self.separator = self.extension_config('toc', config.get('mdx_configs')).get('separator', '-')
 
@@ -350,7 +351,7 @@ class HtmlProoferPlugin(BasePlugin):
     def is_url_target_valid(url: str, src_path: str, files: Dict[str, File],
                             strict_anchors: bool = False, attr_list: bool = True,
                             tables: bool = True, separator: str = '-',
-                            containers: bool = True) -> bool:
+                            containers: FrozenSet[str] = frozenset(CONTAINER_MARKERS)) -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
@@ -408,7 +409,7 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def contains_anchor(markdown: str, anchor: str, strict_anchors: bool = False,
                         attr_list: bool = True, tables: bool = True, separator: str = '-',
-                        containers: bool = True) -> bool:
+                        containers: FrozenSet[str] = frozenset(CONTAINER_MARKERS)) -> bool:
         """Check if a set of Markdown source text contains a heading that corresponds to a
         given anchor."""
         # A block quote's content is rendered as Markdown, so look past its markers
@@ -475,13 +476,15 @@ class HtmlProoferPlugin(BasePlugin):
         return lines
 
     @staticmethod
-    def blank_indented_code(lines: List[str], containers: bool = True) -> List[str]:
+    def blank_indented_code(lines: List[str],
+                            containers: FrozenSet[str] = frozenset(CONTAINER_MARKERS)) -> List[str]:
         """Blank out indented code blocks, which don't generate any headings or anchors.
 
-        Content indented under a list item or an admonition is Markdown rather than code, so it's
-        left alone."""
+        Content indented under a list item or an admonition is Markdown rather than code, so code
+        within one starts four columns past that container's own content, however deeply nested."""
         lines = list(lines)
-        in_container = in_code = False
+        content_indents: List[int] = []
+        in_code = False
         after_blank = True
         for i, line in enumerate(lines):
             if not line.strip():
@@ -490,26 +493,39 @@ class HtmlProoferPlugin(BasePlugin):
             # A tab indents by up to four columns, like the spaces it stands in for
             expanded = line.expandtabs(4)
             indent = len(expanded) - len(expanded.lstrip(' '))
-            if indent == 0:
-                in_container = (LIST_ITEM_PATTERN.match(line) is not None
-                                or (containers and ADMONITION_PATTERN.match(line) is not None))
-                in_code = False
+            while content_indents and indent < content_indents[-1]:
+                content_indents.pop()
+            content_indent = content_indents[-1] if content_indents else 0
             # A code block starts with an indented line after a blank one, and runs until the
-            # indentation ends. Within a container, code is indented past the container's content.
-            elif indent >= (8 if in_container else 4) and (in_code or after_blank):
+            # indentation ends
+            if indent >= content_indent + 4 and (in_code or after_blank):
                 in_code = True
                 lines[i] = ''
             else:
                 in_code = False
+                if HtmlProoferPlugin.opens_container(expanded.lstrip(' '), containers):
+                    # A container's content is indented four columns past its marker
+                    content_indents.append(indent + 4)
             after_blank = False
         return lines
 
     @staticmethod
+    def opens_container(text: str, containers: FrozenSet[str]) -> bool:
+        """Check if a line opens a list item, or an admonition whose extension is enabled."""
+        return (LIST_ITEM_PATTERN.match(text) is not None
+                or any(text.startswith(marker) for marker in containers))
+
+    @staticmethod
     def blank_html_comments(lines: List[str]) -> List[str]:
         """Blank out HTML comments, whose content isn't rendered, keeping the lines around them."""
-        text = HTML_COMMENT_PATTERN.sub(lambda match: re.sub(r'[^\n]', ' ', match.group()),
-                                        '\n'.join(lines))
-        return text.split('\n')
+        text = '\n'.join(lines)
+        # Comment syntax within a code span is literal text, so only look outside them
+        blanked = list(text)
+        for match in HTML_COMMENT_PATTERN.finditer(HtmlProoferPlugin.mask_code_spans(text)):
+            for index in range(match.start(), match.end()):
+                if blanked[index] != '\n':
+                    blanked[index] = ' '
+        return ''.join(blanked).split('\n')
 
     @staticmethod
     def table_lines(lines: List[str]) -> Set[int]:
@@ -697,16 +713,20 @@ class HtmlProoferPlugin(BasePlugin):
         """The anchors a page's headings provide, as attr_list and toc generate them."""
         headings = []
         previous_line = ''
+        previous_is_heading = False
         for line in lines:
             # Markdown allows whitespace before headers and an arbitrary number of #'s.
             heading_match = HEADING_PATTERN.match(line)
             if heading_match is not None:
                 # Only an ATX heading has an optional closing sequence of #'s, which isn't rendered
                 headings.append(CLOSING_HASHES_PATTERN.sub('', heading_match.group(1)))
-            elif HtmlProoferPlugin.underlines_setext_heading(line, previous_line, strict_anchors):
-                # Setext headings are underlined with ='s or -'s on the line after the heading text
+            elif (not previous_is_heading
+                  and HtmlProoferPlugin.underlines_setext_heading(line, previous_line, strict_anchors)):
+                # Setext headings are underlined with ='s or -'s on the line after the heading text.
+                # After an ATX heading the ='s or -'s are a thematic break instead.
                 headings.append(previous_line.strip())
             previous_line = line
+            previous_is_heading = heading_match is not None
 
         explicit_ids = [HtmlProoferPlugin.heading_explicit_id(heading, attr_list, references)
                         for heading in headings]

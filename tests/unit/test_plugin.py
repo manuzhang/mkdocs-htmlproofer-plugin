@@ -261,6 +261,17 @@ def test_get_url_status(empty_files, validate_external: bool):
         ('# Repeat\n\n# Other {#repeat}', 'repeat_1', True),
         ('Paragraph\n{#repeat}\n\n# Repeat', 'repeat', True),
         ('Paragraph\n{#repeat}\n\n# Repeat', 'repeat_1', True),
+        # A heading indented under a nested list is content, not code
+        ('- outer\n\n    - inner\n\n        # Deep\n', 'deep', True),
+        # Comment syntax within a code span is literal text
+        ('# Heading `<!-- c -->` text', 'heading-c-text', True),
+        # After an ATX heading, a line of dashes is a thematic break rather than an underline,
+        # so the heading isn't counted twice and uniquified
+        ('# Heading\n---', 'heading', True),
+        ('# Heading\n---', 'heading_1', False),
+        # Python-Markdown caps a heading at six levels and renders the rest as text
+        ('####### fake', 'fake', True),
+        ('###### six', 'six', True),
         # A block quote's content is rendered as Markdown
         ('> # Quoted heading\n', 'quoted-heading', True),
         ('> Paragraph\n> {#quotedid}\n', 'quotedid', True),
@@ -348,6 +359,8 @@ STRICT_ONLY_ANCHORS = [
     ('Term\n\n:   def {#defitem}', 'defitem'),
     # An anchor within an HTML comment isn't rendered
     ('Text\n\n<!-- <a id="fake"></a> -->\n', 'fake'),
+    # Code indented four columns past a list item's content is a code block
+    ('- outer\n\n        # Eight\n', 'eight'),
     # Only the last id of an attribute list is applied
     ('## Heading {#first #second}', 'first'),
 ]
@@ -377,13 +390,19 @@ def test_contains_anchor__without_attr_list(plugin, markdown, anchor, expected):
     assert plugin.contains_anchor(markdown, anchor, strict_anchors=True, attr_list=False) == expected
 
 
-def test_contains_anchor__without_admonitions(plugin):
-    # Without an extension rendering it, `!!!` opens no container and the indented lines are code
-    admonition = '!!! note\n\n    ## Inner heading\n'
-
-    assert plugin.contains_anchor(admonition, 'inner-heading', strict_anchors=True) is True
-    assert plugin.contains_anchor(admonition, 'inner-heading', strict_anchors=True,
-                                  containers=False) is False
+@pytest.mark.parametrize(
+    'markdown, containers, expected', [
+        # Each marker needs the extension which renders it, or its content is an indented code block
+        ('!!! note\n\n    ## Inner heading\n', frozenset({'!!!'}), True),
+        ('!!! note\n\n    ## Inner heading\n', frozenset({'???'}), False),
+        ('!!! note\n\n    ## Inner heading\n', frozenset(), False),
+        ('??? note\n\n    ## Inner heading\n', frozenset({'???'}), True),
+        ('??? note\n\n    ## Inner heading\n', frozenset({'!!!'}), False),
+    ]
+)
+def test_contains_anchor__container_markers(plugin, markdown, containers, expected):
+    assert plugin.contains_anchor(markdown, 'inner-heading', strict_anchors=True,
+                                  containers=containers) == expected
 
 
 def test_contains_anchor__without_tables(plugin):
@@ -409,10 +428,11 @@ def test_contains_anchor__toc_separator(plugin, separator, anchor, expected):
 
 @pytest.mark.parametrize(
     'markdown_extensions, attr_list, tables, containers', [
-        (['attr_list', 'tables', 'admonition'], True, True, True),
-        (['markdown.extensions.attr_list'], True, False, False),
-        (['tables', 'pymdownx.details'], False, True, True),
-        ([], False, False, False),
+        (['attr_list', 'tables', 'admonition'], True, True, {'!!!'}),
+        (['markdown.extensions.attr_list'], True, False, set()),
+        (['tables', 'pymdownx.details'], False, True, {'???'}),
+        (['admonition', 'pymdownx.details'], False, False, {'!!!', '???'}),
+        ([], False, False, set()),
     ]
 )
 def test_on_config__extensions(plugin, markdown_extensions, attr_list, tables, containers):
