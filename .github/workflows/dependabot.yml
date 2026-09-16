@@ -34,14 +34,15 @@ jobs:
       - name: Wait for CI
         # `gh pr merge --auto` waits only for required status checks, and this branch requires none,
         # so wait for the CI run of this commit here. Watching that run rather than all of the PR's
-        # checks avoids waiting for this job itself.
+        # checks avoids waiting for this job itself. CI also runs on `push`, so look for the run of
+        # the `pull_request` event, which tests the merge with the base branch.
         if: steps.check.outputs.auto-merge == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           for _ in $(seq 30); do
-            run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$HEAD_SHA" \
+            run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?event=pull_request&head_sha=$HEAD_SHA" \
               --jq '.workflow_runs[0].id // empty')
             if [ -n "$run_id" ]; then
               break
@@ -58,6 +59,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
+          # CI tested this head against this base. If the base moved on meanwhile, leave the PR to
+          # the run of Dependabot's rebase, which is tested against the new base.
+          base_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$BASE_REF" --jq '.sha')
+          if [ "$base_sha" != "$BASE_SHA" ]; then
+            echo "$BASE_REF moved from $BASE_SHA to $base_sha since CI ran, so not merging"
+            exit 0
+          fi
           gh pr review --approve "$PR_URL"
-          gh pr merge --squash "$PR_URL"
+          # Merge the commit CI ran on, in case Dependabot pushed to the PR meanwhile
+          gh pr merge --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
