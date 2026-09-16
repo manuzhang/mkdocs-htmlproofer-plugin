@@ -184,8 +184,17 @@ def test_get_url_status(empty_files, validate_external: bool):
         (r'## {#customanchor} Heading', 'customanchor', False),
         (r'## {#customanchor} Heading', 'customanchor-heading', True),
         (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
-        # test faulty image in heading syntax
-        (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this-imageimage-link', True),
+        (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this', True),
+        # A linked image, as in the README's own heading
+        ('# mkdocs-htmlproofer-plugin [![PyPI - Version](https://img.shields.io/pypi/v/x.svg)]'
+         '(https://pypi.org/project/x)', 'mkdocs-htmlproofer-plugin', True),
+        # An attribute list only applies where attr_list would apply it
+        (r'## Heading {.customclass}', 'heading-customclass', False),
+        (r'## Heading {#customanchor}', 'heading', False),
+        (r'## Heading {.a} and {.b}', 'heading-a-and-b', True),
+        (r'## Heading{#nospace}', 'headingnospace', True),
+        (r'## Heading{#nospace}', 'nospace', False),
+        ('Setext {#setextid}\n---', 'setextid', True),
 
         (r'## refer to this [![image](image-link){#imageanchorheading}]', 'imageanchorheading', True),
         (
@@ -198,7 +207,7 @@ def test_get_url_status(empty_files, validate_external: bool):
                 'imageanchor2',
                 True
         ),
-        (r'paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
+        ('paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
         (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
         ('Paragraph text\n  {#paragraphanchor}', 'paragraphanchor', True),
         ('Text {#literal} more text', 'literal', False),
@@ -229,6 +238,9 @@ def test_get_url_status(empty_files, validate_external: bool):
         ('    ```python\n    # comment\n    ```\n# Heading', 'comment', False),
         ('    ```python\n    # comment\n    ```\n# Heading', 'heading', True),
         ('```\nUnclosed fence\n# Heading', 'heading', True),
+        # Indented code blocks
+        ('    Fake\n---', 'fake', False),
+        ('    Fake\n    ---', 'fake', False),
     ]
 )
 def test_contains_anchor(plugin, markdown, anchor, expected):
