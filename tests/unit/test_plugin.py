@@ -180,8 +180,6 @@ def test_get_url_status(empty_files, validate_external: bool):
         (r'## Heading {#customanchor}', 'customanchor', True),
         (r'## Heading {: #customanchor}', 'customanchor', True),
         (r'## Heading {.customclass #customanchor}', 'customanchor', True),
-        # attr_list only applies attribute lists at the end of headings
-        (r'## {#customanchor} Heading', 'customanchor', False),
         (r'## {#customanchor} Heading', 'customanchor-heading', True),
         (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
         (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this', True),
@@ -191,10 +189,8 @@ def test_get_url_status(empty_files, validate_external: bool):
          '(https://pypi.org/project/x)', 'mkdocs-htmlproofer-plugin', True),
         # An attribute list only applies where attr_list would apply it
         (r'## Heading {.customclass}', 'heading-customclass', False),
-        (r'## Heading {#customanchor}', 'heading', False),
         (r'## Heading {.a} and {.b}', 'heading-a-and-b', True),
         (r'## Heading {#a} {#b}', 'heading-a-b', True),
-        (r'## Heading {#a} {#b}', 'b', False),
         # Only a link's text ends up in the heading
         ('# Heading [text](href)', 'heading-text', True),
         # Every attribute list directly following an inline element applies
@@ -211,7 +207,6 @@ def test_get_url_status(empty_files, validate_external: bool):
         (r'## Heading{#nospace} ##', 'headingnospace', True),
         (r'## Heading ##', 'heading', True),
         (r'## Heading{#nospace}', 'headingnospace', True),
-        (r'## Heading{#nospace}', 'nospace', False),
         ('Setext {#setextid}\n---', 'setextid', True),
 
         (r'## refer to this [![image](image-link){#imageanchorheading}]', 'imageanchorheading', True),
@@ -228,7 +223,6 @@ def test_get_url_status(empty_files, validate_external: bool):
         ('paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
         (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
         ('Paragraph text\n  {#paragraphanchor}', 'paragraphanchor', True),
-        ('Text {#literal} more text', 'literal', False),
         ('| Cell {#cellanchor} | Other |', 'cellanchor', True),
         # HTML anchor with id attribute
         (r'<a id="myanchor"></a>', 'myanchor', True),
@@ -246,23 +240,68 @@ def test_get_url_status(empty_files, validate_external: bool):
         ('Sub Heading\n-----------\nContent', 'sub-heading', True),
         ('Sub Heading {#customanchor}\n---', 'customanchor', True),
         ('Paragraph\n\n---', 'paragraph', False),
-        # Fenced code blocks
-        ('```\nFake\n---\n```', 'fake', False),
-        ('```bash\n# comment\n```', 'comment', False),
-        ('~~~\n<a id="fake"></a>\n~~~', 'fake', False),
-        ('```\n~~~\n# Mixed fences\n```', 'mixed-fences', False),
-        ('````markdown\n```\n# Nested\n```\n````', 'nested', False),
-        # Indented fences, e.g. in admonitions with pymdownx.superfences
-        ('    ```python\n    # comment\n    ```\n# Heading', 'comment', False),
+        # A fenced code block doesn't stop the rest of the page providing anchors
         ('    ```python\n    # comment\n    ```\n# Heading', 'heading', True),
         ('```\nUnclosed fence\n# Heading', 'heading', True),
-        # Indented code blocks
-        ('    Fake\n---', 'fake', False),
+        # The underline of a Setext heading may be indented by at most three spaces
         ('    Fake\n    ---', 'fake', False),
     ]
 )
 def test_contains_anchor(plugin, markdown, anchor, expected):
     assert plugin.contains_anchor(markdown, anchor) == expected
+    assert plugin.contains_anchor(markdown, anchor, strict_anchors=True) == expected
+
+
+# Anchors which the rendered page doesn't contain, but which 1.5.0 accepted
+STRICT_ONLY_ANCHORS = [
+    # attr_list applies an attribute list at the end of a heading, not at its start
+    (r'## {#customanchor} Heading', 'customanchor'),
+    # An id set by attr_list replaces the generated slug
+    (r'## Heading {#customanchor}', 'heading'),
+    # attr_list applies neither of two attribute lists ending a heading
+    (r'## Heading {#a} {#b}', 'b'),
+    # An attribute list needs a space before it, or to follow an inline element
+    (r'## Heading{#nospace}', 'nospace'),
+    ('Text {#literal} more text', 'literal'),
+    # Code blocks render no headings or anchors
+    ('```\nFake\n---\n```', 'fake'),
+    ('```bash\n# comment\n```', 'comment'),
+    ('~~~\n<a id="fake"></a>\n~~~', 'fake'),
+    ('```\n~~~\n# Mixed fences\n```', 'mixed-fences'),
+    ('````markdown\n```\n# Nested\n```\n````', 'nested'),
+    ('    ```python\n    # comment\n    ```\n# Heading', 'comment'),
+    ('    Fake\n---', 'fake'),
+]
+
+
+@pytest.mark.parametrize('markdown, anchor', STRICT_ONLY_ANCHORS)
+def test_contains_anchor__strict_anchors(plugin, markdown, anchor):
+    assert plugin.contains_anchor(markdown, anchor, strict_anchors=True) is False
+
+
+@pytest.mark.parametrize('markdown, anchor', STRICT_ONLY_ANCHORS)
+def test_contains_anchor__accepted_without_strict_anchors(plugin, markdown, anchor):
+    # Without the option, these keep passing, so upgrading doesn't fail a build which passed before
+    assert plugin.contains_anchor(markdown, anchor) is True
+
+
+@pytest.mark.parametrize('strict_anchors', (False, True))
+def test_get_url_status__strict_anchors(strict_anchors):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': strict_anchors})
+    # attr_list gives this heading the id `custom`, so `#heading` isn't rendered
+    mock_files = Files([
+        Mock(spec=File, src_path='index.md', dest_path='index.html', dest_uri='index.html',
+             url='index.html', src_uri='index.md', page=Mock(spec=Page, markdown='')),
+        Mock(spec=File, src_path='page.md', dest_path='page.html', dest_uri='page.html',
+             url='page.html', src_uri='page.md', page=Mock(spec=Page, markdown='# Heading {#custom}')),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
+
+    assert plugin.get_url_status('page.html#custom', 'index.md', set(), files) == 0
+    assert plugin.get_url_status('page.html#heading', 'index.md', set(), files) == (404 if strict_anchors else 0)
 
 
 def test_get_url_status__same_page_anchor(plugin, empty_files):

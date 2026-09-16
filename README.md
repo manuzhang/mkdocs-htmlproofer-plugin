@@ -158,6 +158,21 @@ plugins:
       validate_rendered_template: True
 ```
 
+### `strict_anchors`
+
+Off by default. When off, an anchor is accepted if either the rendered page contains it or an earlier
+version of this plugin would have accepted it, so enabling a new version doesn't turn existing builds red.
+
+Turn it on to accept only the anchors a page actually renders. This reports links that point at an
+anchor which doesn't exist, such as `#heading` for `## Heading {#custom-id}`, where `attr_list` replaces
+the generated anchor, or an anchor which only appears inside a fenced code block.
+
+```yaml
+plugins:
+  - htmlproofer:
+      strict_anchors: True
+```
+
 ### `skip_downloads`
 
 Optionally skip downloading of a remote URLs content via GET request. This can

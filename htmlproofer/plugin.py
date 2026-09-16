@@ -41,6 +41,9 @@ LOCAL_PATTERNS = [
     for local in ('localhost', '127.0.0.1', 'app_server')
 ]
 ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
+# Patterns used only without `strict_anchors`, to keep accepting what 1.5.0 accepted
+ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
+LEGACY_IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 # An attribute list is applied to a heading when it ends it, as in attr_list's own HEADER_RE
 HEADING_ATTRLIST_PATTERN = re.compile(r'[ ]+\{\:?([^\}\n]*)\}[ ]*$')
 # An id is a whole token within an attribute list, so a `#` inside e.g. {title="#tooltip"} isn't one
@@ -93,6 +96,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('skip_downloads', config_options.Type(bool, default=False)),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
+        ('strict_anchors', config_options.Type(bool, default=False)),
         ('ignore_urls', config_options.Type(list, default=[])),
         ('warn_on_ignored_urls', config_options.Type(bool, default=False)),
         ('ignore_pages', config_options.Type(list, default=[])),
@@ -269,7 +273,7 @@ class HtmlProoferPlugin(BasePlugin):
         if fragment and not path:
             return 0 if url[1:] in all_element_ids else 404
         else:
-            is_valid = self.is_url_target_valid(url, src_path, files)
+            is_valid = self.is_url_target_valid(url, src_path, files, self.config['strict_anchors'])
             url_status = 404
             if not is_valid and self.is_error(self.config, url, url_status):
                 log_warning(f"Unable to locate source file for: {url}")
@@ -277,7 +281,8 @@ class HtmlProoferPlugin(BasePlugin):
             return 0
 
     @staticmethod
-    def is_url_target_valid(url: str, src_path: str, files: Dict[str, File]) -> bool:
+    def is_url_target_valid(url: str, src_path: str, files: Dict[str, File],
+                            strict_anchors: bool = False) -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
@@ -294,7 +299,8 @@ class HtmlProoferPlugin(BasePlugin):
             if extension == ".md":
                 if source_file.page is None or source_file.page.markdown is None:
                     return False
-                if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, optional_anchor):
+                if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, optional_anchor,
+                                                         strict_anchors):
                     return False
 
         return True
@@ -331,21 +337,22 @@ class HtmlProoferPlugin(BasePlugin):
             return None
 
     @staticmethod
-    def contains_anchor(markdown: str, anchor: str) -> bool:
+    def contains_anchor(markdown: str, anchor: str, strict_anchors: bool = False) -> bool:
         """Check if a set of Markdown source text contains a heading that corresponds to a
         given anchor."""
+        lines = markdown.splitlines()
+        if strict_anchors:
+            # Headings and anchors within code blocks aren't rendered, so they provide no anchor
+            lines = HtmlProoferPlugin.blank_fenced_code(lines)
         previous_line = ''
-        for line in HtmlProoferPlugin.blank_fenced_code(markdown.splitlines()):
+        for line in lines:
             # Markdown allows whitespace before headers and an arbitrary number of #'s.
             heading_match = HEADING_PATTERN.match(line)
             if heading_match is not None:
-                if HtmlProoferPlugin.heading_matches_anchor(heading_match.group(1), anchor):
+                if HtmlProoferPlugin.heading_matches_anchor(heading_match.group(1), anchor, strict_anchors):
                     return True
-            elif previous_line.strip() and not previous_line.startswith(('    ', '\t')) \
-                    and SETEXT_UNDERLINE_PATTERN.match(line):
-                # Setext headings are underlined with ='s or -'s on the line after the heading text.
-                # An indented line is code rather than heading text.
-                if HtmlProoferPlugin.heading_matches_anchor(previous_line.strip(), anchor):
+            elif HtmlProoferPlugin.underlines_setext_heading(line, previous_line, strict_anchors):
+                if HtmlProoferPlugin.heading_matches_anchor(previous_line.strip(), anchor, strict_anchors):
                     return True
             previous_line = line
 
@@ -357,10 +364,18 @@ class HtmlProoferPlugin(BasePlugin):
 
             # Any attribute list at end of paragraphs or after images can also generate an anchor (in addition to
             # the heading ones) so gather those and check as well (multiple could be a line so gather all)
-            if anchor in HtmlProoferPlugin.attr_list_anchors(line):
+            if anchor in HtmlProoferPlugin.attr_list_anchors(line, strict_anchors):
                 return True
 
         return False
+
+    @staticmethod
+    def underlines_setext_heading(line: str, previous_line: str, strict_anchors: bool) -> bool:
+        """Check if a line of ='s or -'s underlines the previous one, making it a Setext heading."""
+        if not previous_line.strip() or SETEXT_UNDERLINE_PATTERN.match(line) is None:
+            return False
+        # An indented line is code rather than heading text
+        return not (strict_anchors and previous_line.startswith(('    ', '\t')))
 
     @staticmethod
     def blank_fenced_code(lines: List[str]) -> List[str]:
@@ -382,6 +397,14 @@ class HtmlProoferPlugin(BasePlugin):
         return lines
 
     @staticmethod
+    def legacy_heading_anchor(heading: str) -> str:
+        """The anchor 1.5.0 generated for a heading, which is accepted without `strict_anchors`."""
+        heading = re.sub(ATTRLIST_PATTERN, '', heading)
+        heading = re.sub(LEGACY_IMAGE_PATTERN, '', heading)
+        heading = re.sub(EMOJI_PATTERN, '', heading)
+        return slugify(heading, '-')
+
+    @staticmethod
     def follows_inline_element(before: str) -> bool:
         """Check if an attribute list directly following this text is applied to an inline element."""
         return bool(before) and (before[-1] in ELEMENT_END_CHARS
@@ -400,9 +423,10 @@ class HtmlProoferPlugin(BasePlugin):
         return ''.join(parts)
 
     @staticmethod
-    def attr_list_anchors(line: str) -> List[str]:
+    def attr_list_anchors(line: str, strict_anchors: bool = False) -> List[str]:
         """Find the anchors set by attribute lists in a line of Markdown."""
-        anchors = []
+        # Without `strict_anchors`, an id anywhere in an attribute list counts, as it did in 1.5.0
+        anchors = [] if strict_anchors else re.findall(ATTRLIST_ANCHOR_PATTERN, line)
         matches = list(ATTRLIST_PATTERN.finditer(line))
         follows_element = [HtmlProoferPlugin.follows_inline_element(line[:m.start()]) for m in matches]
         for match, follows in zip(matches, follows_element):
@@ -421,8 +445,11 @@ class HtmlProoferPlugin(BasePlugin):
         return anchors
 
     @staticmethod
-    def heading_matches_anchor(heading: str, anchor: str) -> bool:
+    def heading_matches_anchor(heading: str, anchor: str, strict_anchors: bool = False) -> bool:
         """Check if a Markdown heading text corresponds to a given anchor."""
+        if not strict_anchors and anchor == HtmlProoferPlugin.legacy_heading_anchor(heading):
+            return True
+
         # Headings are allowed to have attr_list after them, of the form:
         # # Heading { #testanchor .testclass }
         # # Heading {: #testanchor .testclass }
