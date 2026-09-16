@@ -6,7 +6,9 @@ jobs:
   auto-merge:
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'manuzhang/mkdocs-htmlproofer-plugin'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
+      actions: read
       contents: write
       pull-requests: write
 
@@ -16,16 +18,46 @@ jobs:
         uses: dependabot/fetch-metadata@v3
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Approve and enable auto-merge
-        # GitHub Actions updates only affect CI, which runs on the PR itself.
+      - name: Check whether the update can be merged automatically
+        id: check
+        # GitHub Actions updates only affect CI, which has to pass before merging.
         # Major updates of Python packages are left for manual review.
-        if: >-
-          steps.metadata.outputs.package-ecosystem == 'github_actions' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        env:
+          ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+        run: |
+          if [ "$ECOSYSTEM" = 'github_actions' ] ||
+             [ "$UPDATE_TYPE" = 'version-update:semver-minor' ] ||
+             [ "$UPDATE_TYPE" = 'version-update:semver-patch' ]; then
+            echo 'auto-merge=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Wait for CI
+        # `gh pr merge --auto` waits only for required status checks, and this branch requires none,
+        # so wait for the CI run of this commit here. Watching that run rather than all of the PR's
+        # checks avoids waiting for this job itself.
+        if: steps.check.outputs.auto-merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for _ in $(seq 30); do
+            run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$HEAD_SHA" \
+              --jq '.workflow_runs[0].id // empty')
+            if [ -n "$run_id" ]; then
+              break
+            fi
+            sleep 10
+          done
+          if [ -z "$run_id" ]; then
+            echo "No CI run found for $HEAD_SHA"
+            exit 1
+          fi
+          gh run watch "$run_id" --exit-status --interval 30
+      - name: Approve and merge
+        if: steps.check.outputs.auto-merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           gh pr review --approve "$PR_URL"
-          gh pr merge --auto --squash "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          gh pr merge --squash "$PR_URL"
