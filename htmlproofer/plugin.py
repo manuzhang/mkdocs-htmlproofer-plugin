@@ -6,7 +6,7 @@ import pathlib
 import re
 import threading
 import time
-from typing import Dict, List, Optional, Set
+from typing import Dict, FrozenSet, List, Optional, Set
 import urllib.parse
 import uuid
 
@@ -27,17 +27,18 @@ URL_HEADERS = {'User-Agent': _URL_BOT_ID, 'Accept-Language': '*'}
 NAME = "htmlproofer"
 
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
-HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
-SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
-FENCE_PATTERN = re.compile(r'\s*(`{3,}|~{3,})')
-HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
-IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 LOCAL_PATTERNS = [
     re.compile(rf'https?://{local}')
     for local in ('localhost', '127.0.0.1', 'app_server')
 ]
-ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
+
+# Patterns for the anchors a Markdown source provides, which are accepted without `strict_anchors`
+HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
+SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
+HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
 ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
+ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
+IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 
 # Example emojis:
 #   :banana:
@@ -54,6 +55,18 @@ MALFORMED_URL_ERRORS = (
 )
 
 urllib3.disable_warnings()
+
+
+@lru_cache(maxsize=1024)
+def parse_anchors(rendered_content: str) -> FrozenSet[str]:
+    """The anchors a rendered page provides, parsed once per page rather than per link."""
+    soup = BeautifulSoup(rendered_content, 'html.parser')
+    for template in soup.select('template'):
+        # A template's contents are inert, so a fragment can't navigate to the ids within it
+        template.decompose()
+    # `name` is the legacy form of `id`, which only makes an anchor navigable
+    return frozenset({str(tag['id']) for tag in soup.select('[id]')}
+                     | {str(tag['name']) for tag in soup.select('a[name]')})
 
 
 def log_info(msg, *args, **kwargs):
@@ -80,6 +93,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('skip_downloads', config_options.Type(bool, default=False)),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
+        ('strict_anchors', config_options.Type(bool, default=False)),
         ('ignore_urls', config_options.Type(list, default=[])),
         ('warn_on_ignored_urls', config_options.Type(bool, default=False)),
         ('ignore_pages', config_options.Type(list, default=[])),
@@ -90,6 +104,8 @@ class HtmlProoferPlugin(BasePlugin):
     def __init__(self):
         self._local = threading.local()
         self.files = []
+        # The full output of each page which has been rendered, by source path
+        self.rendered_pages: Dict[str, str] = {}
         self.scheme_handlers = {
             "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
             "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
@@ -133,6 +149,10 @@ class HtmlProoferPlugin(BasePlugin):
         # Optimization: only parse links and headings
         # li, sup are used for footnotes
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup', 'img'))
+
+        # Keep this page's full output, so a link into it is checked against everything it renders,
+        # the theme's anchors included, rather than against its Markdown body alone
+        self.rendered_pages[page.file.src_uri] = output_content
 
         content = output_content if self.config['validate_rendered_template'] else page.content
         soup = BeautifulSoup(str(content), 'html.parser', parse_only=strainer)
@@ -254,9 +274,11 @@ class HtmlProoferPlugin(BasePlugin):
                 return self.get_external_url(url, scheme, src_path)
             return 0
         if fragment and not path:
-            return 0 if url[1:] in all_element_ids else 404
+            # A fragment is percent-encoded in the URL, while an id is written as it renders
+            return 0 if urllib.parse.unquote(url[1:]) in all_element_ids else 404
         else:
-            is_valid = self.is_url_target_valid(url, src_path, files)
+            is_valid = self.is_url_target_valid(url, src_path, files, self.config['strict_anchors'],
+                                                self.rendered_pages)
             url_status = 404
             if not is_valid and self.is_error(self.config, url, url_status):
                 log_warning(f"Unable to locate source file for: {url}")
@@ -264,7 +286,9 @@ class HtmlProoferPlugin(BasePlugin):
             return 0
 
     @staticmethod
-    def is_url_target_valid(url: str, src_path: str, files: Dict[str, File]) -> bool:
+    def is_url_target_valid(url: str, src_path: str, files: Dict[str, File],
+                            strict_anchors: bool = False,
+                            rendered_pages: Optional[Dict[str, str]] = None) -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
@@ -281,7 +305,15 @@ class HtmlProoferPlugin(BasePlugin):
             if extension == ".md":
                 if source_file.page is None or source_file.page.markdown is None:
                     return False
-                if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, optional_anchor):
+                # A page's full output covers the anchors its theme renders as well, and is there
+                # once it has been built; until then its Markdown body is what's available
+                rendered_content = (rendered_pages or {}).get(source_file.src_uri)
+                if rendered_content is None:
+                    rendered_content = getattr(source_file.page, 'content', None)
+                # A fragment is percent-encoded in the URL, while an id is written as it renders
+                anchor = urllib.parse.unquote(optional_anchor)
+                if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, anchor,
+                                                         rendered_content, strict_anchors):
                     return False
 
         return True
@@ -318,94 +350,62 @@ class HtmlProoferPlugin(BasePlugin):
             return None
 
     @staticmethod
-    def contains_anchor(markdown: str, anchor: str) -> bool:
-        """Check if a set of Markdown source text contains a heading that corresponds to a
-        given anchor."""
+    def contains_anchor(markdown: str, anchor: str, rendered_content: Optional[str] = None,
+                        strict_anchors: bool = False) -> bool:
+        """Check if a page provides an anchor, from the ids of its rendered HTML.
+
+        With `strict_anchors`, only those ids count. Without it, the anchors its Markdown source
+        provides are accepted as well."""
+        if anchor in HtmlProoferPlugin.rendered_anchors(rendered_content):
+            return True
+        if strict_anchors and rendered_content is not None:
+            return False
+        # The page hasn't been rendered yet, or its source anchors are accepted too
+        return HtmlProoferPlugin.source_contains_anchor(markdown, anchor)
+
+    @staticmethod
+    def rendered_anchors(rendered_content: Optional[str]) -> FrozenSet[str]:
+        """The anchors a rendered page provides, which are the ids and anchor names it contains."""
+        if not rendered_content:
+            return frozenset()
+        return parse_anchors(rendered_content)
+
+    @staticmethod
+    def source_contains_anchor(markdown: str, anchor: str) -> bool:
+        """Check the Markdown source of a page for an anchor."""
         previous_line = ''
-        for line in HtmlProoferPlugin.blank_fenced_code(markdown.splitlines()):
+        for line in markdown.splitlines():
             # Markdown allows whitespace before headers and an arbitrary number of #'s.
             heading_match = HEADING_PATTERN.match(line)
-            if heading_match is not None:
-                if HtmlProoferPlugin.heading_matches_anchor(heading_match.group(1), anchor):
-                    return True
-            elif previous_line.strip() and SETEXT_UNDERLINE_PATTERN.match(line):
-                # Setext headings are underlined with ='s or -'s on the line after the heading text.
-                if HtmlProoferPlugin.heading_matches_anchor(previous_line.strip(), anchor):
-                    return True
+            if heading_match is not None and anchor == HtmlProoferPlugin.heading_anchor(
+                    heading_match.group(1)):
+                return True
+
+            # A heading may instead be underlined with ='s or -'s on the line below it
+            if (previous_line.strip() and SETEXT_UNDERLINE_PATTERN.match(line)
+                    and anchor == HtmlProoferPlugin.heading_anchor(previous_line.strip())):
+                return True
             previous_line = line
 
             # Check for HTML anchors using id or name attributes
             # Multiple anchors can exist on a single line, so find all of them
-            for html_anchor in re.findall(HTML_LINK_PATTERN, line):
-                if anchor == html_anchor:
-                    return True
+            if anchor in re.findall(HTML_LINK_PATTERN, line):
+                return True
 
-            # Any attribute list at end of paragraphs or after images can also generate an anchor (in addition to
-            # the heading ones) so gather those and check as well (multiple could be a line so gather all)
-            if anchor in HtmlProoferPlugin.attr_list_anchors(line):
+            # Any attribute list at end of paragraphs or after images can also generate an anchor (in
+            # addition to the heading ones) so gather those and check as well
+            if anchor in re.findall(ATTRLIST_ANCHOR_PATTERN, line):
                 return True
 
         return False
 
     @staticmethod
-    def blank_fenced_code(lines: List[str]) -> List[str]:
-        """Blank out the lines of fenced code blocks, which don't generate any headings or anchors."""
-        lines = list(lines)
-        start: Optional[int] = None
-        fence = ''
-        for i, line in enumerate(lines):
-            match = FENCE_PATTERN.match(line)
-            if match is None:
-                continue
-            if start is None:
-                start, fence = i, match.group(1)
-            elif match.group(1).startswith(fence) and not line[match.end():].strip():
-                # A fence is closed by at least as many of the same characters. Unclosed fences are
-                # left alone, as they aren't rendered as code blocks.
-                lines[start:i + 1] = [''] * (i + 1 - start)
-                start = None
-        return lines
-
-    @staticmethod
-    def attr_list_anchors(line: str) -> List[str]:
-        """Find the anchors set by attribute lists in a line of Markdown."""
-        anchors = []
-        for match in ATTRLIST_ANCHOR_PATTERN.finditer(line):
-            before, after = line[:match.start()], line[match.end():]
-            # An attribute list only applies when it directly follows an element, stands on its own line,
-            # or ends a heading or table cell. Otherwise, it's rendered as literal text.
-            directly_follows = not before[-1:].isspace()
-            own_line = not before.strip()
-            ends_element = not after.strip() or after.lstrip().startswith('|')
-            if directly_follows or own_line or ends_element:
-                anchors.append(match.group(1))
-        return anchors
-
-    @staticmethod
-    def heading_matches_anchor(heading: str, anchor: str) -> bool:
-        """Check if a Markdown heading text corresponds to a given anchor."""
-        # Headings are allowed to have attr_list after them, of the form:
-        # # Heading { #testanchor .testclass }
-        # # Heading {: #testanchor .testclass }
-        # # Heading {.testclass #testanchor}
-        # # Heading {.testclass}
-        # these can override the headings anchor id, or alternatively just provide additional class etc.
-        # The anchors they set are found by `attr_list_anchors`, so just remove them before slugify.
-        # Attribute lists which don't apply (e.g. at the start of a heading) are rendered as text though,
-        # so also accept the slug with them left in.
-        literal_heading = re.sub(EMOJI_PATTERN, '', heading)
+    def heading_anchor(heading: str) -> str:
+        """The anchor a heading provides, slugified from its Markdown source."""
         heading = re.sub(ATTRLIST_PATTERN, '', heading)
-
-        # Headings are allowed to have images after them, of the form:
-        # # Heading [![Image](image-link)] or ![Image][image-reference]
-        # But these images are not included in the generated anchor, so remove them.
         heading = re.sub(IMAGE_PATTERN, '', heading)
-
-        # Headings are allowed to have emojis in them under certain Mkdocs themes.
-        # https://squidfunk.github.io/mkdocs-material/setup/extensions/python-markdown-extensions/#emoji
         heading = re.sub(EMOJI_PATTERN, '', heading)
-
-        return anchor in (slugify(heading, '-'), slugify(literal_heading, '-'))
+        return slugify(heading, '-')
 
     @staticmethod
     def bad_url(url_status: int) -> bool:

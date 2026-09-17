@@ -87,7 +87,7 @@ def test_on_post_page(
     plugin.files = empty_files
     page = Mock(
         spec=Page,
-        file=Mock(spec=File, src_path='blah.md'),
+        file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'),
         content='' if validate_rendered_template else link_to_500
     )
     config = Mock(spec=Config, data={'use_directory_urls': False})
@@ -117,7 +117,7 @@ def test_on_post_page__img():
     })
     page = Mock(
         spec=Page,
-        file=Mock(spec=File, src_path='blah.md'),
+        file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'),
         content='',
     )
     with pytest.raises(PluginError):
@@ -132,7 +132,7 @@ def test_on_post_page__img_without_src():
     })
     page = Mock(
         spec=Page,
-        file=Mock(spec=File, src_path='blah.md'),
+        file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'),
         content='',
     )
     plugin.on_post_page('<img data-src="lazy-loaded.png" />', page, Mock(spec=Config))
@@ -167,72 +167,199 @@ def test_get_url_status(empty_files, validate_external: bool):
         assert get_url() == 0
 
 
+RENDERED = (
+    '<h1 id="heading">Heading</h1>'
+    '<h2 id="sub-heading">Sub Heading</h2>'
+    '<p id="paragraph">text</p>'
+    '<a name="named-anchor"></a>'
+)
+SOURCE = """# Heading
+
+## Sub Heading
+
+<a id="html-anchor"></a>
+
+Paragraph
+{#attr-list-anchor}
+"""
+
+
+def test_rendered_anchors():
+    assert HtmlProoferPlugin.rendered_anchors(RENDERED) == {
+        'heading', 'sub-heading', 'paragraph', 'named-anchor'}
+    assert HtmlProoferPlugin.rendered_anchors(None) == set()
+    assert HtmlProoferPlugin.rendered_anchors('') == set()
+
+
+def test_rendered_anchors__name_only_makes_an_anchor_navigable():
+    rendered = ('<form name="login"><input name="email"></form><meta name="description">'
+                '<a name="real"></a><div id="also-real"></div>')
+
+    assert HtmlProoferPlugin.rendered_anchors(rendered) == {'real', 'also-real'}
+
+
+def test_rendered_anchors__template_contents_are_inert():
+    rendered = '<template><div id="prototype"></div></template><div id="live"></div>'
+
+    assert HtmlProoferPlugin.rendered_anchors(rendered) == {'live'}
+
+
+def test_rendered_anchors__parses_each_page_once():
+    rendered = '<h1 id="cached">Cached</h1>'
+    htmlproofer.plugin.parse_anchors.cache_clear()
+
+    HtmlProoferPlugin.rendered_anchors(rendered)
+    HtmlProoferPlugin.rendered_anchors(rendered)
+
+    assert htmlproofer.plugin.parse_anchors.cache_info().hits == 1
+
+
 @pytest.mark.parametrize(
     'markdown, anchor, expected', [
-        ('git status', 'git-status', False),
-        ('## git status', 'git-status', True),
-        ('## refer to this [![image](image-link)]', 'refer-to-this', True),
-        ('## git add [$changed-files]', 'git-add-changed-files', True),
-        ('''## Delete ![][delete_icon]
-[delete_icon]: ./delete.svg''', 'delete', True),
-        # attr_list extension tests
-        (r'## Heading {.customclass}', 'heading', True),
-        (r'## Heading {#customanchor}', 'customanchor', True),
-        (r'## Heading {: #customanchor}', 'customanchor', True),
-        (r'## Heading {.customclass #customanchor}', 'customanchor', True),
-        # attr_list only applies attribute lists at the end of headings
-        (r'## {#customanchor} Heading', 'customanchor', False),
-        (r'## {#customanchor} Heading', 'customanchor-heading', True),
-        (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
-        # test faulty image in heading syntax
-        (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this-imageimage-link', True),
-
-        (r'## refer to this [![image](image-link){#imageanchorheading}]', 'imageanchorheading', True),
-        (
-                r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}',
-                'imageanchor1',
-                True
-        ),
-        (
-                r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}',
-                'imageanchor2',
-                True
-        ),
-        (r'paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
-        (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
-        ('Paragraph text\n  {#paragraphanchor}', 'paragraphanchor', True),
-        ('Text {#literal} more text', 'literal', False),
-        ('| Cell {#cellanchor} | Other |', 'cellanchor', True),
-        # HTML anchor with id attribute
-        (r'<a id="myanchor"></a>', 'myanchor', True),
-        (r'<a id="myanchor">Link text</a>', 'myanchor', True),
-        # HTML anchor with name attribute (legacy)
-        (r'<a name="myanchor"></a>', 'myanchor', True),
-        (r'<a name="myanchor">Link text</a>', 'myanchor', True),
-        # HTML anchor in table cell
-        (r'<td rowspan="9"><a name="license"></a>foo bar</td>', 'license', True),
-        (r'<td><a id="REGISTER"></a>REGISTER</td>', 'REGISTER', True),
-        # Anchor with dots (like REGISTER.FIELD1)
-        (r'<a name="REGISTER.FIELD1"></a>FIELD1', 'REGISTER.FIELD1', True),
-        # Setext headings
+        # A heading underlined with ='s or -'s provides an anchor too
         ('Heading\n=======', 'heading', True),
         ('Sub Heading\n-----------\nContent', 'sub-heading', True),
-        ('Sub Heading {#customanchor}\n---', 'customanchor', True),
+        ('Heading\n=======', 'missing', False),
         ('Paragraph\n\n---', 'paragraph', False),
-        # Fenced code blocks
-        ('```\nFake\n---\n```', 'fake', False),
-        ('```bash\n# comment\n```', 'comment', False),
-        ('~~~\n<a id="fake"></a>\n~~~', 'fake', False),
-        ('```\n~~~\n# Mixed fences\n```', 'mixed-fences', False),
-        ('````markdown\n```\n# Nested\n```\n````', 'nested', False),
-        # Indented fences, e.g. in admonitions with pymdownx.superfences
-        ('    ```python\n    # comment\n    ```\n# Heading', 'comment', False),
-        ('    ```python\n    # comment\n    ```\n# Heading', 'heading', True),
-        ('```\nUnclosed fence\n# Heading', 'heading', True),
     ]
 )
-def test_contains_anchor(plugin, markdown, anchor, expected):
-    assert plugin.contains_anchor(markdown, anchor) == expected
+def test_source_contains_anchor__setext_heading(plugin, markdown, anchor, expected):
+    assert plugin.contains_anchor(markdown, anchor, None, True) == expected
+
+
+@pytest.mark.parametrize(
+    'anchor, expected', [
+        # The ids and names of the rendered page are the anchors it provides
+        ('heading', True),
+        ('sub-heading', True),
+        ('paragraph', True),
+        ('named-anchor', True),
+        # Anchors only the Markdown source provides aren't accepted
+        ('html-anchor', False),
+        ('attr-list-anchor', False),
+        ('missing', False),
+    ]
+)
+def test_contains_anchor__strict_anchors(plugin, anchor, expected):
+    assert plugin.contains_anchor(SOURCE, anchor, RENDERED, True) == expected
+
+
+@pytest.mark.parametrize('anchor', ('heading', 'html-anchor', 'attr-list-anchor'))
+def test_contains_anchor__strict_anchors_without_rendered_content(plugin, anchor):
+    # A page which hasn't been rendered is checked against its source, so nothing fails spuriously
+    assert plugin.contains_anchor(SOURCE, anchor, None, True) is True
+
+
+@pytest.mark.parametrize(
+    'anchor, expected', [
+        # Anything the page renders
+        ('heading', True),
+        ('named-anchor', True),
+        # ... or which its Markdown source provides
+        ('html-anchor', True),
+        ('attr-list-anchor', True),
+        ('missing', False),
+    ]
+)
+def test_contains_anchor__accepts_rendered_or_source(plugin, anchor, expected):
+    assert plugin.contains_anchor(SOURCE, anchor, RENDERED) == expected
+
+
+@pytest.mark.parametrize(
+    'markdown, anchor, expected', [
+        # Anchors a Markdown source provides
+        ('## git status', 'git-status', True),
+        ('git status', 'git-status', False),
+        ('## refer to this [![image](image-link)]', 'refer-to-this', True),
+        ('## git add [$changed-files]', 'git-add-changed-files', True),
+        ('## Heading {.customclass}', 'heading', True),
+        ('## Heading {#customanchor}', 'customanchor', True),
+        ('## :smile_cat: Title with Emojis :material-star:', 'title-with-emojis', True),
+        (r'<a id="myanchor"></a>', 'myanchor', True),
+        (r'<a name="myanchor">Link text</a>', 'myanchor', True),
+        (r'<td rowspan="9"><a name="license"></a>foo bar</td>', 'license', True),
+        (r'<a name="REGISTER.FIELD1"></a>FIELD1', 'REGISTER.FIELD1', True),
+        ('see image ![image](image-link){#imageanchor}', 'imageanchor', True),
+    ]
+)
+def test_source_contains_anchor(plugin, markdown, anchor, expected):
+    assert plugin.source_contains_anchor(markdown, anchor) == expected
+
+
+@pytest.mark.parametrize('strict_anchors', (False, True))
+def test_get_url_status__strict_anchors(strict_anchors):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': strict_anchors})
+    # attr_list gives this heading the id `custom`, so `#heading` isn't rendered
+    target = Mock(spec=Page, markdown='# Heading {#custom}',
+                  content='<h1 id="custom">Heading</h1>')
+    mock_files = Files([
+        Mock(spec=File, src_path='index.md', dest_path='index.html', dest_uri='index.html',
+             url='index.html', src_uri='index.md', page=Mock(spec=Page, markdown='', content='')),
+        Mock(spec=File, src_path='page.md', dest_path='page.html', dest_uri='page.html',
+             url='page.html', src_uri='page.md', page=target),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
+
+    assert plugin.get_url_status('page.html#custom', 'index.md', set(), files) == 0
+    assert plugin.get_url_status('page.html#heading', 'index.md', set(), files) == (
+        404 if strict_anchors else 0)
+
+
+@pytest.mark.parametrize(
+    'url, expected', [
+        # A fragment is percent-encoded in the URL, while an id is written as it renders
+        ('page.html#caf%C3%A9', 0),
+        ('page.html#café', 0),
+        ('page.html#a%20b', 0),
+        ('page.html#missing', 404),
+    ]
+)
+def test_get_url_status__percent_encoded_fragment(url, expected):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': True})
+    target = Mock(spec=Page, markdown='', content='<h1 id="café">C</h1><a id="a b"></a>')
+    mock_files = Files([
+        Mock(spec=File, src_path='index.md', dest_path='index.html', dest_uri='index.html',
+             url='index.html', src_uri='index.md', page=Mock(spec=Page, markdown='', content='')),
+        Mock(spec=File, src_path='page.md', dest_path='page.html', dest_uri='page.html',
+             url='page.html', src_uri='page.md', page=target),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
+
+    assert plugin.get_url_status(url, 'index.md', set(), files) == expected
+
+
+def test_get_url_status__anchors_are_scoped_to_their_page():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': True})
+    mock_files = Files([
+        Mock(spec=File, src_path='a.md', dest_path='a.html', dest_uri='a.html', url='a.html',
+             src_uri='a.md', page=Mock(spec=Page, markdown='', content='<div id="banner"></div>')),
+        Mock(spec=File, src_path='b.md', dest_path='b.html', dest_uri='b.html', url='b.html',
+             src_uri='b.md', page=Mock(spec=Page, markdown='', content='<p>no banner</p>')),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
+    # Page A has been built, and its output holds an anchor its theme renders around the body
+    plugin.rendered_pages['a.md'] = '<div id="banner"></div><nav id="toc-collapse"></nav>'
+
+    # A link into page A resolves against everything page A renders
+    assert plugin.get_url_status('a.html#banner', 'b.md', set(), files) == 0
+    assert plugin.get_url_status('a.html#toc-collapse', 'b.md', set(), files) == 0
+    # ... while page B provides neither, whichever page was built first
+    assert plugin.get_url_status('b.html#banner', 'a.md', set(), files) == 404
+    assert plugin.get_url_status('b.html#toc-collapse', 'a.md', set(), files) == 404
+
+
+def test_get_url_status__same_page_percent_encoded_fragment(plugin, empty_files):
+    assert plugin.get_url_status('#caf%C3%A9', 'src/path.md', {'café'}, empty_files) == 0
+    assert plugin.get_url_status('#caf%C3%A9', 'src/path.md', {'cafe'}, empty_files) == 404
 
 
 def test_get_url_status__same_page_anchor(plugin, empty_files):
