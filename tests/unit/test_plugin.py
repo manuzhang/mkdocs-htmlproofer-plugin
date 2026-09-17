@@ -167,323 +167,87 @@ def test_get_url_status(empty_files, validate_external: bool):
         assert get_url() == 0
 
 
+RENDERED = (
+    '<h1 id="heading">Heading</h1>'
+    '<h2 id="sub-heading">Sub Heading</h2>'
+    '<p id="paragraph">text</p>'
+    '<a name="legacy-anchor"></a>'
+)
+SOURCE = """# Heading
+
+## Sub Heading
+
+<a id="html-anchor"></a>
+
+Paragraph
+{#attr-list-anchor}
+"""
+
+
+def test_rendered_anchors():
+    assert HtmlProoferPlugin.rendered_anchors(RENDERED) == {
+        'heading', 'sub-heading', 'paragraph', 'legacy-anchor'}
+    assert HtmlProoferPlugin.rendered_anchors(None) == set()
+    assert HtmlProoferPlugin.rendered_anchors('') == set()
+
+
+@pytest.mark.parametrize(
+    'anchor, expected', [
+        # The ids and names of the rendered page are the anchors it provides
+        ('heading', True),
+        ('sub-heading', True),
+        ('paragraph', True),
+        ('legacy-anchor', True),
+        # Anchors only an earlier version derived from the source aren't accepted
+        ('html-anchor', False),
+        ('attr-list-anchor', False),
+        ('missing', False),
+    ]
+)
+def test_contains_anchor__strict_anchors(plugin, anchor, expected):
+    assert plugin.contains_anchor(SOURCE, anchor, RENDERED, True) == expected
+
+
+@pytest.mark.parametrize('anchor', ('heading', 'html-anchor', 'attr-list-anchor'))
+def test_contains_anchor__strict_anchors_without_rendered_content(plugin, anchor):
+    # A page which hasn't been rendered is checked against its source, so nothing fails spuriously
+    assert plugin.contains_anchor(SOURCE, anchor, None, True) is True
+
+
+@pytest.mark.parametrize(
+    'anchor, expected', [
+        # Anything the page renders
+        ('heading', True),
+        ('legacy-anchor', True),
+        # ... or which versions up to 1.5.0 accepted from the source
+        ('html-anchor', True),
+        ('attr-list-anchor', True),
+        ('missing', False),
+    ]
+)
+def test_contains_anchor__accepts_rendered_or_source(plugin, anchor, expected):
+    assert plugin.contains_anchor(SOURCE, anchor, RENDERED) == expected
+
+
 @pytest.mark.parametrize(
     'markdown, anchor, expected', [
-        ('git status', 'git-status', False),
+        # The source anchors of versions up to 1.5.0
         ('## git status', 'git-status', True),
+        ('git status', 'git-status', False),
         ('## refer to this [![image](image-link)]', 'refer-to-this', True),
         ('## git add [$changed-files]', 'git-add-changed-files', True),
-        ('''## Delete ![][delete_icon]
-[delete_icon]: ./delete.svg''', 'delete', True),
-        # attr_list extension tests
-        (r'## Heading {.customclass}', 'heading', True),
-        (r'## Heading {#customanchor}', 'customanchor', True),
-        (r'## Heading {: #customanchor}', 'customanchor', True),
-        (r'## Heading {.customclass #customanchor}', 'customanchor', True),
-        (r'## {#customanchor} Heading', 'customanchor-heading', True),
-        (r'## refer to this ![image](image-link){#imageanchorheading}', 'imageanchorheading', True),
-        (r'## refer to this ![image](image-link){.customclass}', 'refer-to-this', True),
-        ('# Heading [![alt][img]][target]\n\n[img]: i.png\n[target]: t.html', 'heading', True),
-        # An undefined reference renders literally, so it stays part of the slug
-        ('# Heading [text][undefined]', 'heading-textundefined', True),
-        ('# Heading [text][undefined]', 'heading-text', False),
-        ('# Heading [text][ref]\n\n[ref]: t.html', 'heading-text', True),
-        # Markdown within a code span is literal text
-        ('# Example `[![alt](src)](href)`', 'example-altsrchref', True),
-        ('# Example `{#codeid}` text', 'example-codeid-text', True),
-        ('## `code`{#codeid} text', 'codeid', True),
-        ('## `code`{#codeid} text', 'code-text', True),
-        # An attribute list applies to an inline element, not to literal punctuation
-        ('# Heading (text){#id}', 'heading-textid', True),
-        # Indented content of a list or an admonition is Markdown rather than code
-        ('!!! note\n\n    ## Inner heading\n', 'inner-heading', True),
-        ('- item\n\n    ## Listed heading\n', 'listed-heading', True),
-        # A linked image, as in the README's own heading
-        ('# mkdocs-htmlproofer-plugin [![PyPI - Version](https://img.shields.io/pypi/v/x.svg)]'
-         '(https://pypi.org/project/x)', 'mkdocs-htmlproofer-plugin', True),
-        # An attribute list only applies where attr_list would apply it
-        (r'## Heading {.customclass}', 'heading-customclass', False),
-        (r'## Heading {.a} and {.b}', 'heading-a-and-b', True),
-        (r'## Heading {#a} {#b}', 'heading-a-b', True),
-        # Only a link's text ends up in the heading
-        ('# Heading [text](href)', 'heading-text', True),
-        # Every attribute list directly following an inline element applies
-        (r'## *one*{.red} and *two*{.blue}', 'one-and-two', True),
-        ('## <https://example.com>{#target}', 'target', True),
-        ('## <https://example.com>{#target}', 'httpsexamplecom', True),
-        # An id is a whole token, so this one sets a title rather than an id
-        (r'## Heading {title="#tooltip"}', 'heading', True),
-        (r'## Heading {title="#tooltip"}', 'tooltip', False),
-        (r'## Heading {title="#tooltip" #real}', 'real', True),
-        # A closing sequence of #'s is stripped before the attribute list is applied
-        (r'## Heading {.class} ##', 'heading', True),
-        (r'## Heading {#anchor} ##', 'anchor', True),
-        (r'## Heading{#nospace} ##', 'headingnospace', True),
-        (r'## Heading ##', 'heading', True),
-        (r'## Heading{#nospace}', 'headingnospace', True),
-        ('Setext {#setextid}\n---', 'setextid', True),
-
-        (r'## refer to this [![image](image-link){#imageanchorheading}]', 'imageanchorheading', True),
-        (
-                r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}',
-                'imageanchor1',
-                True
-        ),
-        (
-                r'see image ![image](image-link){#imageanchor1} see image 2 ![image](image-link){#imageanchor2}',
-                'imageanchor2',
-                True
-        ),
-        ('paragraph text\n{#paragraphanchor}', 'paragraphanchor', True),
-        (r'paragraph text\n{#paragraphanchor test', 'paragraphanchor', False),
-        ('Paragraph text\n  {#paragraphanchor}', 'paragraphanchor', True),
-        ('| A | B |\n|---|---|\n| Cell {#cellanchor} | Other |', 'cellanchor', True),
-        # Each table cell is its own element, so an attribute list may end each of them
-        ('| A | B |\n|---|---|\n| A {#a} | B {#b} |', 'a', True),
-        ('| A | B |\n|---|---|\n| A {#a} | B {#b} |', 'b', True),
-        # An id written as an attribute rather than as the `#id` shorthand
-        ('## Heading {id=foo}', 'foo', True),
-        ('## Heading {id="foo"}', 'foo', True),
-        # A label may hold balanced brackets
-        ('# [outer [inner]](target)', 'outer-inner', True),
-        # The last id in an attribute list wins
-        ('## Heading {#first #second}', 'second', True),
-        # A reference label matches however its whitespace is written
-        ('# Heading [text][a  b]\n\n[a b]: t.html', 'heading-text', True),
-        # A definition within a code block doesn't define the reference, in either mode
-        ('# Heading [text][ref]\n\n```\n[ref]: t.html\n```', 'heading-textref', True),
-        ('# Heading [text][ref]\n\n```\n[ref]: t.html\n```', 'heading-text', False),
-        # The toc extension suffixes repeated headings
-        ('# Repeat\n\n# Repeat', 'repeat', True),
-        ('# Repeat\n\n# Repeat', 'repeat_1', True),
-        # An id set by attr_list claims its name before generated slugs, wherever it's set
-        ('# Repeat\n\n# Other {#repeat}', 'repeat', True),
-        ('# Repeat\n\n# Other {#repeat}', 'repeat_1', True),
-        ('Paragraph\n{#repeat}\n\n# Repeat', 'repeat', True),
-        ('Paragraph\n{#repeat}\n\n# Repeat', 'repeat_1', True),
-        # An anchor written inside a block-level HTML element renders, as in the integration docs,
-        # even though Markdown within that element doesn't
-        ('<table>\n<tbody>\n<tr><td><a name="REGISTER"></a>REGISTER</td></tr>\n</tbody>\n</table>',
-         'REGISTER', True),
-        ('<div>\n<a id="inblock"></a>\n</div>', 'inblock', True),
-        # Python-Markdown's ordered lists use `1.`, so `1.` opens a container and `1)` doesn't
-        ('1. ordinary\n\n    # real\n', 'real', True),
-        # Neither of two brace groups ending a heading is applied, so both stay in its text
-        ('# Heading {literal} {#real}', 'heading-literal-real', True),
-        ('# Heading {.cls} {#real}', 'heading-cls-real', True),
-        # A heading indented under a nested list is content, not code
-        ('- outer\n\n    - inner\n\n        # Deep\n', 'deep', True),
-        # Comment syntax within a code span is literal text
-        ('# Heading `<!-- c -->` text', 'heading-c-text', True),
-        # After an ATX heading, a line of dashes is a thematic break rather than an underline,
-        # so the heading isn't counted twice and uniquified
-        ('# Heading\n---', 'heading', True),
-        ('# Heading\n---', 'heading_1', False),
-        # Python-Markdown caps a heading at six levels and renders the rest as text
-        ('####### fake', 'fake', True),
-        ('###### six', 'six', True),
-        # A block quote's content is rendered as Markdown
-        ('> # Quoted heading\n', 'quoted-heading', True),
-        ('> Paragraph\n> {#quotedid}\n', 'quotedid', True),
-        # An image written as a shortcut reference renders when its label is defined
-        ('# Heading ![alt]\n\n[alt]: i.png', 'heading', True),
-        ('# Heading ![alt]', 'heading-alt', True),
-        # A destination may contain balanced parentheses
-        ('# Heading ![alt](https://example.com/a_(b).png)', 'heading', True),
-        ('# Heading [![alt](https://example.com/a_(b).png)](https://example.com/x_(y))', 'heading', True),
-        # An escaped bracket renders literally, so this is neither a link nor an image
-        (r'# Heading \[text](href)', 'heading-texthref', True),
-        (r'# Heading \[text](href)', 'heading-text', False),
-        (r'# Heading \![alt](src)', 'heading-alt', True),
-        # Only an ATX heading has a closing sequence of #'s
-        ('Title {#id} ##\n---', 'title-id', True),
-        # HTML anchor with id attribute
+        ('## Heading {.customclass}', 'heading', True),
+        ('## Heading {#customanchor}', 'customanchor', True),
+        ('## :smile_cat: Title with Emojis :material-star:', 'title-with-emojis', True),
         (r'<a id="myanchor"></a>', 'myanchor', True),
-        (r'<a id="myanchor">Link text</a>', 'myanchor', True),
-        # HTML anchor with name attribute (legacy)
-        (r'<a name="myanchor"></a>', 'myanchor', True),
         (r'<a name="myanchor">Link text</a>', 'myanchor', True),
-        # HTML anchor in table cell
         (r'<td rowspan="9"><a name="license"></a>foo bar</td>', 'license', True),
-        (r'<td><a id="REGISTER"></a>REGISTER</td>', 'REGISTER', True),
-        # Anchor with dots (like REGISTER.FIELD1)
         (r'<a name="REGISTER.FIELD1"></a>FIELD1', 'REGISTER.FIELD1', True),
-        # Setext headings
-        ('Heading\n=======', 'heading', True),
-        ('Sub Heading\n-----------\nContent', 'sub-heading', True),
-        ('Sub Heading {#customanchor}\n---', 'customanchor', True),
-        ('Paragraph\n\n---', 'paragraph', False),
-        # A fenced code block doesn't stop the rest of the page providing anchors
-        ('    ```python\n    # comment\n    ```\n# Heading', 'heading', True),
-        ('```\nUnclosed fence\n# Heading', 'heading', True),
-        # The underline of a Setext heading may be indented by at most three spaces
-        ('    Fake\n    ---', 'fake', False),
+        ('see image ![image](image-link){#imageanchor}', 'imageanchor', True),
     ]
 )
-def test_contains_anchor(plugin, markdown, anchor, expected):
-    assert plugin.contains_anchor(markdown, anchor) == expected
-    assert plugin.contains_anchor(markdown, anchor, strict_anchors=True) == expected
-
-
-# Anchors which the rendered page doesn't contain, but which 1.5.0 accepted
-STRICT_ONLY_ANCHORS = [
-    # attr_list applies an attribute list at the end of a heading, not at its start
-    (r'## {#customanchor} Heading', 'customanchor'),
-    # An id set by attr_list replaces the generated slug
-    (r'## Heading {#customanchor}', 'heading'),
-    # attr_list applies neither of two attribute lists ending a heading
-    (r'## Heading {#a} {#b}', 'b'),
-    # An attribute list needs a space before it, or to follow an inline element
-    (r'## Heading{#nospace}', 'nospace'),
-    ('Text {#literal} more text', 'literal'),
-    # Code blocks render no headings or anchors
-    ('```\nFake\n---\n```', 'fake'),
-    ('```bash\n# comment\n```', 'comment'),
-    ('~~~\n<a id="fake"></a>\n~~~', 'fake'),
-    ('```\n~~~\n# Mixed fences\n```', 'mixed-fences'),
-    ('````markdown\n```\n# Nested\n```\n````', 'nested'),
-    ('    ```python\n    # comment\n    ```\n# Heading', 'comment'),
-    ('    Fake\n---', 'fake'),
-    # The closing #'s of a Setext heading are content, so its attribute list isn't trailing
-    ('Title {#id} ##\n---', 'id'),
-    # An indented code block renders no heading
-    ('Intro\n\n    # comment\n\nOutro', 'comment'),
-    # Literal punctuation doesn't make an attribute list apply to an inline element
-    ('# Heading (text){#id}', 'id'),
-    # An attribute list within a code span is literal text
-    ('# Example `{#codeid}` text', 'codeid'),
-    # Pipes only end a cell within a table, and a standalone list must occupy the whole line
-    ('| A {#fake} | B |', 'fake'),
-    ('{#fake} and more text', 'fake'),
-    # Escaping the delimiter leaves emphasis, and an undefined reference a link, as literal text
-    (r'# Heading \*not em\*{#fake}', 'fake'),
-    ('# Heading [text][missing]{#fake}', 'fake'),
-    # A code block nested in a list item renders no heading
-    ('- item\n\n        # fake\n', 'fake'),
-    # A tab indents a code block just as four spaces do
-    ('Intro\n\n\t# fake\n\nOutro', 'fake'),
-    # attr_list applies a trailing list to a heading or a table cell, but not to a paragraph,
-    # a list item or a definition, where it stays literal text
-    ('Paragraph {#inline}', 'inline'),
-    ('- item {#listitem}', 'listitem'),
-    ('Term\n\n:   def {#defitem}', 'defitem'),
-    # An anchor within an HTML comment isn't rendered
-    ('Text\n\n<!-- <a id="fake"></a> -->\n', 'fake'),
-    # Code indented four columns past a list item's content is a code block
-    ('- outer\n\n        # Eight\n', 'eight'),
-    # `1)` opens no list, so the indented line is a code block
-    ('1) ordinary\n\n    # fake\n', 'fake'),
-    # Markdown within a block-level HTML element is raw HTML, not a heading
-    ('<div>\n# fake\n</div>', 'fake'),
-    ('<div>\n\n# fake\n\n</div>', 'fake'),
-    # Neither of two brace groups ending a heading sets an id
-    ('# Heading {literal} {#real}', 'real'),
-    # Only the last id of an attribute list is applied
-    ('## Heading {#first #second}', 'first'),
-]
-
-
-@pytest.mark.parametrize('markdown, anchor', STRICT_ONLY_ANCHORS)
-def test_contains_anchor__strict_anchors(plugin, markdown, anchor):
-    assert plugin.contains_anchor(markdown, anchor, strict_anchors=True) is False
-
-
-@pytest.mark.parametrize('markdown, anchor', STRICT_ONLY_ANCHORS)
-def test_contains_anchor__accepted_without_strict_anchors(plugin, markdown, anchor):
-    # Without the option, these keep passing, so upgrading doesn't fail a build which passed before
-    assert plugin.contains_anchor(markdown, anchor) is True
-
-
-@pytest.mark.parametrize(
-    'markdown, anchor, expected', [
-        # Without the extension an attribute list is literal text, which the slug includes
-        ('## Heading {#id}', 'heading-id', True),
-        ('## Heading {#id}', 'id', False),
-        ('## Heading {.cls}', 'heading-cls', True),
-        ('## Heading {.cls}', 'heading', False),
-    ]
-)
-def test_contains_anchor__without_attr_list(plugin, markdown, anchor, expected):
-    assert plugin.contains_anchor(markdown, anchor, strict_anchors=True, attr_list=False) == expected
-
-
-@pytest.mark.parametrize(
-    'markdown, containers, expected', [
-        # Each marker needs the extension which renders it, or its content is an indented code block
-        ('!!! note\n\n    ## Inner heading\n', frozenset({'!!!'}), True),
-        ('!!! note\n\n    ## Inner heading\n', frozenset({'???'}), False),
-        ('!!! note\n\n    ## Inner heading\n', frozenset(), False),
-        ('??? note\n\n    ## Inner heading\n', frozenset({'???'}), True),
-        ('??? note\n\n    ## Inner heading\n', frozenset({'!!!'}), False),
-    ]
-)
-def test_contains_anchor__container_markers(plugin, markdown, containers, expected):
-    assert plugin.contains_anchor(markdown, 'inner-heading', strict_anchors=True,
-                                  containers=containers) == expected
-
-
-def test_contains_anchor__without_tables(plugin):
-    # Without the extension a table-shaped line is an ordinary paragraph, whose pipes end no cell
-    table = '| A | B |\n|---|---|\n| A {#a} | B {#b} |'
-
-    assert plugin.contains_anchor(table, 'a', strict_anchors=True) is True
-    assert plugin.contains_anchor(table, 'a', strict_anchors=True, tables=False) is False
-
-
-@pytest.mark.parametrize(
-    'separator, anchor, expected', [
-        ('-', 'sub-heading', True),
-        ('-', 'sub_heading', False),
-        ('_', 'sub_heading', True),
-        ('_', 'sub-heading', False),
-    ]
-)
-def test_contains_anchor__toc_separator(plugin, separator, anchor, expected):
-    assert plugin.contains_anchor('## Sub Heading', anchor, strict_anchors=True,
-                                  separator=separator) == expected
-
-
-@pytest.mark.parametrize(
-    'markdown_extensions, attr_list, tables, containers', [
-        (['attr_list', 'tables', 'admonition'], True, True, {'!!!'}),
-        (['markdown.extensions.attr_list'], True, False, set()),
-        (['tables', 'pymdownx.details'], False, True, {'???'}),
-        (['admonition', 'pymdownx.details'], False, False, {'!!!', '???'}),
-        ([], False, False, set()),
-    ]
-)
-def test_on_config__extensions(plugin, markdown_extensions, attr_list, tables, containers):
-    config = Mock(spec=Config)
-    config.get.side_effect = lambda key, default=None: {
-        'markdown_extensions': markdown_extensions, 'mdx_configs': {}
-    }.get(key, default)
-
-    plugin.on_config(config)
-
-    assert plugin.attr_list == attr_list
-    assert plugin.tables == tables
-    assert plugin.containers == containers
-
-
-@pytest.mark.parametrize(
-    'mdx_configs, expected', [
-        ({}, '-'),
-        ({'toc': {}}, '-'),
-        ({'toc': {'separator': '_'}}, '_'),
-        # MkDocs keys the configuration by the name the extension was enabled under
-        ({'markdown.extensions.toc': {'separator': '_'}}, '_'),
-        ({'toc': None}, '-'),
-    ]
-)
-def test_on_config__toc_separator(plugin, mdx_configs, expected):
-    config = Mock(spec=Config)
-    config.get.side_effect = lambda key, default=None: {
-        'markdown_extensions': ['toc'], 'mdx_configs': mdx_configs
-    }.get(key, default)
-
-    plugin.on_config(config)
-
-    assert plugin.separator == expected
+def test_source_contains_anchor(plugin, markdown, anchor, expected):
+    assert plugin.source_contains_anchor(markdown, anchor) == expected
 
 
 @pytest.mark.parametrize('strict_anchors', (False, True))
@@ -491,18 +255,21 @@ def test_get_url_status__strict_anchors(strict_anchors):
     plugin = HtmlProoferPlugin()
     plugin.load_config({'strict_anchors': strict_anchors})
     # attr_list gives this heading the id `custom`, so `#heading` isn't rendered
+    target = Mock(spec=Page, markdown='# Heading {#custom}',
+                  content='<h1 id="custom">Heading</h1>')
     mock_files = Files([
         Mock(spec=File, src_path='index.md', dest_path='index.html', dest_uri='index.html',
-             url='index.html', src_uri='index.md', page=Mock(spec=Page, markdown='')),
+             url='index.html', src_uri='index.md', page=Mock(spec=Page, markdown='', content='')),
         Mock(spec=File, src_path='page.md', dest_path='page.html', dest_uri='page.html',
-             url='page.html', src_uri='page.md', page=Mock(spec=Page, markdown='# Heading {#custom}')),
+             url='page.html', src_uri='page.md', page=target),
     ])
     files = {}
     files.update({os.path.normpath(file.url): file for file in mock_files})
     files.update({file.src_uri: file for file in mock_files})
 
     assert plugin.get_url_status('page.html#custom', 'index.md', set(), files) == 0
-    assert plugin.get_url_status('page.html#heading', 'index.md', set(), files) == (404 if strict_anchors else 0)
+    assert plugin.get_url_status('page.html#heading', 'index.md', set(), files) == (
+        404 if strict_anchors else 0)
 
 
 def test_get_url_status__same_page_anchor(plugin, empty_files):
