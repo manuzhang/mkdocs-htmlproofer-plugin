@@ -32,9 +32,9 @@ LOCAL_PATTERNS = [
     for local in ('localhost', '127.0.0.1', 'app_server')
 ]
 
-# Patterns for the anchors earlier versions derived from the Markdown source, which are still
-# accepted without `strict_anchors`
+# Patterns for the anchors a Markdown source provides, which are accepted without `strict_anchors`
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
+SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
 HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
 ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
 ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
@@ -104,8 +104,8 @@ class HtmlProoferPlugin(BasePlugin):
     def __init__(self):
         self._local = threading.local()
         self.files = []
-        # Anchors the theme adds to every page, outside the Markdown body
-        self.template_anchors: Set[str] = set()
+        # The full output of each page which has been rendered, by source path
+        self.rendered_pages: Dict[str, str] = {}
         self.scheme_handlers = {
             "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
             "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
@@ -150,10 +150,9 @@ class HtmlProoferPlugin(BasePlugin):
         # li, sup are used for footnotes
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup', 'img'))
 
-        # The theme renders the same anchors around the Markdown body of every page, so those it
-        # adds here are available on the pages this one links to as well
-        self.template_anchors |= (HtmlProoferPlugin.rendered_anchors(output_content)
-                                  - HtmlProoferPlugin.rendered_anchors(page.content))
+        # Keep this page's full output, so a link into it is checked against everything it renders,
+        # the theme's anchors included, rather than against its Markdown body alone
+        self.rendered_pages[page.file.src_uri] = output_content
 
         content = output_content if self.config['validate_rendered_template'] else page.content
         soup = BeautifulSoup(str(content), 'html.parser', parse_only=strainer)
@@ -279,7 +278,7 @@ class HtmlProoferPlugin(BasePlugin):
             return 0 if urllib.parse.unquote(url[1:]) in all_element_ids else 404
         else:
             is_valid = self.is_url_target_valid(url, src_path, files, self.config['strict_anchors'],
-                                                frozenset(self.template_anchors))
+                                                self.rendered_pages)
             url_status = 404
             if not is_valid and self.is_error(self.config, url, url_status):
                 log_warning(f"Unable to locate source file for: {url}")
@@ -289,7 +288,7 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def is_url_target_valid(url: str, src_path: str, files: Dict[str, File],
                             strict_anchors: bool = False,
-                            template_anchors: FrozenSet[str] = frozenset()) -> bool:
+                            rendered_pages: Optional[Dict[str, str]] = None) -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
@@ -306,11 +305,15 @@ class HtmlProoferPlugin(BasePlugin):
             if extension == ".md":
                 if source_file.page is None or source_file.page.markdown is None:
                     return False
+                # A page's full output covers the anchors its theme renders as well, and is there
+                # once it has been built; until then its Markdown body is what's available
+                rendered_content = (rendered_pages or {}).get(source_file.src_uri)
+                if rendered_content is None:
+                    rendered_content = getattr(source_file.page, 'content', None)
                 # A fragment is percent-encoded in the URL, while an id is written as it renders
                 anchor = urllib.parse.unquote(optional_anchor)
                 if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, anchor,
-                                                         getattr(source_file.page, 'content', None),
-                                                         strict_anchors, template_anchors):
+                                                         rendered_content, strict_anchors):
                     return False
 
         return True
@@ -348,18 +351,16 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def contains_anchor(markdown: str, anchor: str, rendered_content: Optional[str] = None,
-                        strict_anchors: bool = False,
-                        template_anchors: FrozenSet[str] = frozenset()) -> bool:
+                        strict_anchors: bool = False) -> bool:
         """Check if a page provides an anchor, from the ids of its rendered HTML.
 
-        With `strict_anchors`, only those ids count. Without it, the anchors earlier versions
-        derived from the Markdown source are accepted as well, so upgrading fails no build which
-        passed before."""
-        if anchor in HtmlProoferPlugin.rendered_anchors(rendered_content) or anchor in template_anchors:
+        With `strict_anchors`, only those ids count. Without it, the anchors its Markdown source
+        provides are accepted as well."""
+        if anchor in HtmlProoferPlugin.rendered_anchors(rendered_content):
             return True
         if strict_anchors and rendered_content is not None:
             return False
-        # The page hasn't been rendered yet, or the anchors of earlier versions are allowed
+        # The page hasn't been rendered yet, or its source anchors are accepted too
         return HtmlProoferPlugin.source_contains_anchor(markdown, anchor)
 
     @staticmethod
@@ -371,13 +372,20 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def source_contains_anchor(markdown: str, anchor: str) -> bool:
-        """Check the Markdown source for an anchor, as earlier versions did."""
+        """Check the Markdown source of a page for an anchor."""
+        previous_line = ''
         for line in markdown.splitlines():
             # Markdown allows whitespace before headers and an arbitrary number of #'s.
             heading_match = HEADING_PATTERN.match(line)
-            if heading_match is not None and anchor == HtmlProoferPlugin.legacy_heading_anchor(
+            if heading_match is not None and anchor == HtmlProoferPlugin.heading_anchor(
                     heading_match.group(1)):
                 return True
+
+            # A heading may instead be underlined with ='s or -'s on the line below it
+            if (previous_line.strip() and SETEXT_UNDERLINE_PATTERN.match(line)
+                    and anchor == HtmlProoferPlugin.heading_anchor(previous_line.strip())):
+                return True
+            previous_line = line
 
             # Check for HTML anchors using id or name attributes
             # Multiple anchors can exist on a single line, so find all of them
@@ -392,8 +400,8 @@ class HtmlProoferPlugin(BasePlugin):
         return False
 
     @staticmethod
-    def legacy_heading_anchor(heading: str) -> str:
-        """The anchor earlier versions generated for a heading, accepted without `strict_anchors`."""
+    def heading_anchor(heading: str) -> str:
+        """The anchor a heading provides, slugified from its Markdown source."""
         heading = re.sub(ATTRLIST_PATTERN, '', heading)
         heading = re.sub(IMAGE_PATTERN, '', heading)
         heading = re.sub(EMOJI_PATTERN, '', heading)

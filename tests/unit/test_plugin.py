@@ -87,7 +87,7 @@ def test_on_post_page(
     plugin.files = empty_files
     page = Mock(
         spec=Page,
-        file=Mock(spec=File, src_path='blah.md'),
+        file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'),
         content='' if validate_rendered_template else link_to_500
     )
     config = Mock(spec=Config, data={'use_directory_urls': False})
@@ -117,7 +117,7 @@ def test_on_post_page__img():
     })
     page = Mock(
         spec=Page,
-        file=Mock(spec=File, src_path='blah.md'),
+        file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'),
         content='',
     )
     with pytest.raises(PluginError):
@@ -132,7 +132,7 @@ def test_on_post_page__img_without_src():
     })
     page = Mock(
         spec=Page,
-        file=Mock(spec=File, src_path='blah.md'),
+        file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'),
         content='',
     )
     plugin.on_post_page('<img data-src="lazy-loaded.png" />', page, Mock(spec=Config))
@@ -171,7 +171,7 @@ RENDERED = (
     '<h1 id="heading">Heading</h1>'
     '<h2 id="sub-heading">Sub Heading</h2>'
     '<p id="paragraph">text</p>'
-    '<a name="legacy-anchor"></a>'
+    '<a name="named-anchor"></a>'
 )
 SOURCE = """# Heading
 
@@ -186,7 +186,7 @@ Paragraph
 
 def test_rendered_anchors():
     assert HtmlProoferPlugin.rendered_anchors(RENDERED) == {
-        'heading', 'sub-heading', 'paragraph', 'legacy-anchor'}
+        'heading', 'sub-heading', 'paragraph', 'named-anchor'}
     assert HtmlProoferPlugin.rendered_anchors(None) == set()
     assert HtmlProoferPlugin.rendered_anchors('') == set()
 
@@ -214,11 +214,17 @@ def test_rendered_anchors__parses_each_page_once():
     assert htmlproofer.plugin.parse_anchors.cache_info().hits == 1
 
 
-def test_contains_anchor__template_anchor():
-    # The theme renders these around the body of every page, so they're valid targets
-    assert HtmlProoferPlugin.contains_anchor('', 'toc-collapse', RENDERED, True) is False
-    assert HtmlProoferPlugin.contains_anchor('', 'toc-collapse', RENDERED, True,
-                                             frozenset({'toc-collapse'})) is True
+@pytest.mark.parametrize(
+    'markdown, anchor, expected', [
+        # A heading underlined with ='s or -'s provides an anchor too
+        ('Heading\n=======', 'heading', True),
+        ('Sub Heading\n-----------\nContent', 'sub-heading', True),
+        ('Heading\n=======', 'missing', False),
+        ('Paragraph\n\n---', 'paragraph', False),
+    ]
+)
+def test_source_contains_anchor__setext_heading(plugin, markdown, anchor, expected):
+    assert plugin.contains_anchor(markdown, anchor, None, True) == expected
 
 
 @pytest.mark.parametrize(
@@ -227,8 +233,8 @@ def test_contains_anchor__template_anchor():
         ('heading', True),
         ('sub-heading', True),
         ('paragraph', True),
-        ('legacy-anchor', True),
-        # Anchors only an earlier version derived from the source aren't accepted
+        ('named-anchor', True),
+        # Anchors only the Markdown source provides aren't accepted
         ('html-anchor', False),
         ('attr-list-anchor', False),
         ('missing', False),
@@ -248,8 +254,8 @@ def test_contains_anchor__strict_anchors_without_rendered_content(plugin, anchor
     'anchor, expected', [
         # Anything the page renders
         ('heading', True),
-        ('legacy-anchor', True),
-        # ... or which earlier versions accepted from the source
+        ('named-anchor', True),
+        # ... or which its Markdown source provides
         ('html-anchor', True),
         ('attr-list-anchor', True),
         ('missing', False),
@@ -261,7 +267,7 @@ def test_contains_anchor__accepts_rendered_or_source(plugin, anchor, expected):
 
 @pytest.mark.parametrize(
     'markdown, anchor, expected', [
-        # The source anchors of earlier versions
+        # Anchors a Markdown source provides
         ('## git status', 'git-status', True),
         ('git status', 'git-status', False),
         ('## refer to this [![image](image-link)]', 'refer-to-this', True),
@@ -326,6 +332,29 @@ def test_get_url_status__percent_encoded_fragment(url, expected):
     files.update({file.src_uri: file for file in mock_files})
 
     assert plugin.get_url_status(url, 'index.md', set(), files) == expected
+
+
+def test_get_url_status__anchors_are_scoped_to_their_page():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': True})
+    mock_files = Files([
+        Mock(spec=File, src_path='a.md', dest_path='a.html', dest_uri='a.html', url='a.html',
+             src_uri='a.md', page=Mock(spec=Page, markdown='', content='<div id="banner"></div>')),
+        Mock(spec=File, src_path='b.md', dest_path='b.html', dest_uri='b.html', url='b.html',
+             src_uri='b.md', page=Mock(spec=Page, markdown='', content='<p>no banner</p>')),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
+    # Page A has been built, and its output holds an anchor its theme renders around the body
+    plugin.rendered_pages['a.md'] = '<div id="banner"></div><nav id="toc-collapse"></nav>'
+
+    # A link into page A resolves against everything page A renders
+    assert plugin.get_url_status('a.html#banner', 'b.md', set(), files) == 0
+    assert plugin.get_url_status('a.html#toc-collapse', 'b.md', set(), files) == 0
+    # ... while page B provides neither, whichever page was built first
+    assert plugin.get_url_status('b.html#banner', 'a.md', set(), files) == 404
+    assert plugin.get_url_status('b.html#toc-collapse', 'a.md', set(), files) == 404
 
 
 def test_get_url_status__same_page_percent_encoded_fragment(plugin, empty_files):

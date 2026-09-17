@@ -160,8 +160,8 @@ plugins:
 
 ### `strict_anchors`
 
-Off by default. When off, an anchor is accepted if either the rendered page contains it or an earlier
-version of this plugin would have accepted it, so enabling a new version doesn't turn existing builds red.
+Off by default, when an anchor is accepted if either the rendered page contains it or its Markdown
+source provides it.
 
 Turn it on to accept only the anchors a page actually renders. This reports links that point at an
 anchor which doesn't exist, such as `#heading` for `## Heading {#custom-id}`, where `attr_list` replaces
