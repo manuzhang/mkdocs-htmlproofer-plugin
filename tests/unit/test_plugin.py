@@ -216,6 +216,19 @@ def test_rendered_anchors__parses_each_page_once():
     assert htmlproofer.plugin.parse_anchors.cache_info().hits == 1
 
 
+def test_on_post_page__keeps_anchors_rather_than_the_output():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({})
+    page = Mock(spec=Page, file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'), content='')
+    htmlproofer.plugin.parse_anchors.cache_clear()
+
+    plugin.on_post_page('<h1 id="rendered">R</h1>', page, Mock(spec=Config))
+
+    assert plugin.rendered_pages == {'blah.md': frozenset({'rendered'})}
+    # The cache holds whatever it is given, so a page's output must not go through it
+    assert htmlproofer.plugin.parse_anchors.cache_info().currsize == 0
+
+
 @pytest.mark.parametrize(
     'markdown, anchor, expected', [
         # A heading underlined with ='s or -'s provides an anchor too
@@ -372,10 +385,26 @@ def linked_pages():
     return files
 
 
+@pytest.mark.parametrize('strict_anchors', (False, True))
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_check_url__defers_without_warning(log_warning_mock, strict_anchors):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': strict_anchors, 'raise_error_after_finish': True})
+
+    # Page A hasn't been built, so the anchors of its theme aren't known in either mode
+    plugin.check_url('a.html#toc-collapse', 'b.md', set(), linked_pages())
+
+    assert plugin.deferred_urls == [('a.html#toc-collapse', 'b.md')]
+    # Nothing is reported about a link which may well hold
+    log_warning_mock.assert_not_called()
+    assert plugin.invalid_links is False
+
+
 def test_check_url__defers_a_link_into_a_page_not_yet_rendered():
     plugin = HtmlProoferPlugin()
     plugin.load_config({'strict_anchors': True, 'raise_error_after_finish': True})
     files = linked_pages()
+    plugin.files = list(files.values())
 
     # Page A hasn't been built, so this anchor of its theme isn't known yet
     plugin.check_url('a.html#toc-collapse', 'b.md', set(), files)
@@ -392,6 +421,7 @@ def test_check_url__reports_a_deferred_link_whose_anchor_never_appears():
     plugin = HtmlProoferPlugin()
     plugin.load_config({'strict_anchors': True, 'raise_error_after_finish': True})
     files = linked_pages()
+    plugin.files = list(files.values())
 
     plugin.check_url('a.html#missing', 'b.md', set(), files)
     assert plugin.invalid_links is False
