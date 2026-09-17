@@ -249,7 +249,7 @@ def test_contains_anchor__strict_anchors_without_rendered_content(plugin, anchor
         # Anything the page renders
         ('heading', True),
         ('legacy-anchor', True),
-        # ... or which versions up to 1.5.0 accepted from the source
+        # ... or which earlier versions accepted from the source
         ('html-anchor', True),
         ('attr-list-anchor', True),
         ('missing', False),
@@ -261,7 +261,7 @@ def test_contains_anchor__accepts_rendered_or_source(plugin, anchor, expected):
 
 @pytest.mark.parametrize(
     'markdown, anchor, expected', [
-        # The source anchors of versions up to 1.5.0
+        # The source anchors of earlier versions
         ('## git status', 'git-status', True),
         ('git status', 'git-status', False),
         ('## refer to this [![image](image-link)]', 'refer-to-this', True),

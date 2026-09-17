@@ -32,7 +32,7 @@ LOCAL_PATTERNS = [
     for local in ('localhost', '127.0.0.1', 'app_server')
 ]
 
-# Patterns for the anchors versions up to 1.5.0 derived from the Markdown source, which are still
+# Patterns for the anchors earlier versions derived from the Markdown source, which are still
 # accepted without `strict_anchors`
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
@@ -371,7 +371,7 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def source_contains_anchor(markdown: str, anchor: str) -> bool:
-        """Check the Markdown source for an anchor, as versions up to 1.5.0 did."""
+        """Check the Markdown source for an anchor, as earlier versions did."""
         for line in markdown.splitlines():
             # Markdown allows whitespace before headers and an arbitrary number of #'s.
             heading_match = HEADING_PATTERN.match(line)
@@ -393,7 +393,7 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def legacy_heading_anchor(heading: str) -> str:
-        """The anchor 1.5.0 generated for a heading, which is accepted without `strict_anchors`."""
+        """The anchor earlier versions generated for a heading, accepted without `strict_anchors`."""
         heading = re.sub(ATTRLIST_PATTERN, '', heading)
         heading = re.sub(IMAGE_PATTERN, '', heading)
         heading = re.sub(EMOJI_PATTERN, '', heading)
