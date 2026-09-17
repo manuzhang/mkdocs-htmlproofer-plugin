@@ -6,7 +6,7 @@ import pathlib
 import re
 import threading
 import time
-from typing import Dict, List, Optional, Set
+from typing import Dict, FrozenSet, List, Optional, Set
 import urllib.parse
 import uuid
 
@@ -57,6 +57,18 @@ MALFORMED_URL_ERRORS = (
 urllib3.disable_warnings()
 
 
+@lru_cache(maxsize=1024)
+def parse_anchors(rendered_content: str) -> FrozenSet[str]:
+    """The anchors a rendered page provides, parsed once per page rather than per link."""
+    soup = BeautifulSoup(rendered_content, 'html.parser')
+    for template in soup.select('template'):
+        # A template's contents are inert, so a fragment can't navigate to the ids within it
+        template.decompose()
+    # `name` is the legacy form of `id`, which only makes an anchor navigable
+    return frozenset({str(tag['id']) for tag in soup.select('[id]')}
+                     | {str(tag['name']) for tag in soup.select('a[name]')})
+
+
 def log_info(msg, *args, **kwargs):
     utils.log.info(f"{NAME}: {msg}", *args, **kwargs)
 
@@ -92,6 +104,8 @@ class HtmlProoferPlugin(BasePlugin):
     def __init__(self):
         self._local = threading.local()
         self.files = []
+        # Anchors the theme adds to every page, outside the Markdown body
+        self.template_anchors: Set[str] = set()
         self.scheme_handlers = {
             "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
             "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
@@ -135,6 +149,11 @@ class HtmlProoferPlugin(BasePlugin):
         # Optimization: only parse links and headings
         # li, sup are used for footnotes
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup', 'img'))
+
+        # The theme renders the same anchors around the Markdown body of every page, so those it
+        # adds here are available on the pages this one links to as well
+        self.template_anchors |= (HtmlProoferPlugin.rendered_anchors(output_content)
+                                  - HtmlProoferPlugin.rendered_anchors(page.content))
 
         content = output_content if self.config['validate_rendered_template'] else page.content
         soup = BeautifulSoup(str(content), 'html.parser', parse_only=strainer)
@@ -256,9 +275,11 @@ class HtmlProoferPlugin(BasePlugin):
                 return self.get_external_url(url, scheme, src_path)
             return 0
         if fragment and not path:
-            return 0 if url[1:] in all_element_ids else 404
+            # A fragment is percent-encoded in the URL, while an id is written as it renders
+            return 0 if urllib.parse.unquote(url[1:]) in all_element_ids else 404
         else:
-            is_valid = self.is_url_target_valid(url, src_path, files, self.config['strict_anchors'])
+            is_valid = self.is_url_target_valid(url, src_path, files, self.config['strict_anchors'],
+                                                frozenset(self.template_anchors))
             url_status = 404
             if not is_valid and self.is_error(self.config, url, url_status):
                 log_warning(f"Unable to locate source file for: {url}")
@@ -267,7 +288,8 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def is_url_target_valid(url: str, src_path: str, files: Dict[str, File],
-                            strict_anchors: bool = False) -> bool:
+                            strict_anchors: bool = False,
+                            template_anchors: FrozenSet[str] = frozenset()) -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
@@ -284,9 +306,11 @@ class HtmlProoferPlugin(BasePlugin):
             if extension == ".md":
                 if source_file.page is None or source_file.page.markdown is None:
                     return False
-                if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, optional_anchor,
+                # A fragment is percent-encoded in the URL, while an id is written as it renders
+                anchor = urllib.parse.unquote(optional_anchor)
+                if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, anchor,
                                                          getattr(source_file.page, 'content', None),
-                                                         strict_anchors):
+                                                         strict_anchors, template_anchors):
                     return False
 
         return True
@@ -324,13 +348,14 @@ class HtmlProoferPlugin(BasePlugin):
 
     @staticmethod
     def contains_anchor(markdown: str, anchor: str, rendered_content: Optional[str] = None,
-                        strict_anchors: bool = False) -> bool:
+                        strict_anchors: bool = False,
+                        template_anchors: FrozenSet[str] = frozenset()) -> bool:
         """Check if a page provides an anchor, from the ids of its rendered HTML.
 
         With `strict_anchors`, only those ids count. Without it, the anchors earlier versions
         derived from the Markdown source are accepted as well, so upgrading fails no build which
         passed before."""
-        if anchor in HtmlProoferPlugin.rendered_anchors(rendered_content):
+        if anchor in HtmlProoferPlugin.rendered_anchors(rendered_content) or anchor in template_anchors:
             return True
         if strict_anchors and rendered_content is not None:
             return False
@@ -338,14 +363,11 @@ class HtmlProoferPlugin(BasePlugin):
         return HtmlProoferPlugin.source_contains_anchor(markdown, anchor)
 
     @staticmethod
-    def rendered_anchors(rendered_content: Optional[str]) -> Set[str]:
-        """The anchors a rendered page provides, which are the ids and names of its elements."""
+    def rendered_anchors(rendered_content: Optional[str]) -> FrozenSet[str]:
+        """The anchors a rendered page provides, which are the ids and anchor names it contains."""
         if not rendered_content:
-            return set()
-        soup = BeautifulSoup(rendered_content, 'html.parser')
-        # `name` is the legacy form of `id`, still written in the raw HTML of some pages
-        return {str(tag[attribute]) for attribute in ('id', 'name')
-                for tag in soup.select(f'[{attribute}]')}
+            return frozenset()
+        return parse_anchors(rendered_content)
 
     @staticmethod
     def source_contains_anchor(markdown: str, anchor: str) -> bool:

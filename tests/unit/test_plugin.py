@@ -191,6 +191,36 @@ def test_rendered_anchors():
     assert HtmlProoferPlugin.rendered_anchors('') == set()
 
 
+def test_rendered_anchors__name_only_makes_an_anchor_navigable():
+    rendered = ('<form name="login"><input name="email"></form><meta name="description">'
+                '<a name="real"></a><div id="also-real"></div>')
+
+    assert HtmlProoferPlugin.rendered_anchors(rendered) == {'real', 'also-real'}
+
+
+def test_rendered_anchors__template_contents_are_inert():
+    rendered = '<template><div id="prototype"></div></template><div id="live"></div>'
+
+    assert HtmlProoferPlugin.rendered_anchors(rendered) == {'live'}
+
+
+def test_rendered_anchors__parses_each_page_once():
+    rendered = '<h1 id="cached">Cached</h1>'
+    htmlproofer.plugin.parse_anchors.cache_clear()
+
+    HtmlProoferPlugin.rendered_anchors(rendered)
+    HtmlProoferPlugin.rendered_anchors(rendered)
+
+    assert htmlproofer.plugin.parse_anchors.cache_info().hits == 1
+
+
+def test_contains_anchor__template_anchor():
+    # The theme renders these around the body of every page, so they're valid targets
+    assert HtmlProoferPlugin.contains_anchor('', 'toc-collapse', RENDERED, True) is False
+    assert HtmlProoferPlugin.contains_anchor('', 'toc-collapse', RENDERED, True,
+                                             frozenset({'toc-collapse'})) is True
+
+
 @pytest.mark.parametrize(
     'anchor, expected', [
         # The ids and names of the rendered page are the anchors it provides
@@ -270,6 +300,37 @@ def test_get_url_status__strict_anchors(strict_anchors):
     assert plugin.get_url_status('page.html#custom', 'index.md', set(), files) == 0
     assert plugin.get_url_status('page.html#heading', 'index.md', set(), files) == (
         404 if strict_anchors else 0)
+
+
+@pytest.mark.parametrize(
+    'url, expected', [
+        # A fragment is percent-encoded in the URL, while an id is written as it renders
+        ('page.html#caf%C3%A9', 0),
+        ('page.html#café', 0),
+        ('page.html#a%20b', 0),
+        ('page.html#missing', 404),
+    ]
+)
+def test_get_url_status__percent_encoded_fragment(url, expected):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': True})
+    target = Mock(spec=Page, markdown='', content='<h1 id="café">C</h1><a id="a b"></a>')
+    mock_files = Files([
+        Mock(spec=File, src_path='index.md', dest_path='index.html', dest_uri='index.html',
+             url='index.html', src_uri='index.md', page=Mock(spec=Page, markdown='', content='')),
+        Mock(spec=File, src_path='page.md', dest_path='page.html', dest_uri='page.html',
+             url='page.html', src_uri='page.md', page=target),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
+
+    assert plugin.get_url_status(url, 'index.md', set(), files) == expected
+
+
+def test_get_url_status__same_page_percent_encoded_fragment(plugin, empty_files):
+    assert plugin.get_url_status('#caf%C3%A9', 'src/path.md', {'café'}, empty_files) == 0
+    assert plugin.get_url_status('#caf%C3%A9', 'src/path.md', {'cafe'}, empty_files) == 404
 
 
 def test_get_url_status__same_page_anchor(plugin, empty_files):
