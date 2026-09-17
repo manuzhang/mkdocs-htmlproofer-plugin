@@ -6,7 +6,7 @@ import pathlib
 import re
 import threading
 import time
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple, Union
 import urllib.parse
 import uuid
 
@@ -393,12 +393,16 @@ class HtmlProoferPlugin(BasePlugin):
             return None
 
     @staticmethod
-    def contains_anchor(markdown: str, anchor: str, anchors: Optional[FrozenSet[str]] = None,
+    def contains_anchor(markdown: str, anchor: str,
+                        anchors: Union[str, FrozenSet[str], None] = None,
                         strict_anchors: bool = False) -> bool:
         """Check if a page provides an anchor, from those of its rendered HTML.
 
-        With `strict_anchors`, only the rendered anchors count. Without it, the anchors its
-        Markdown source provides are accepted as well."""
+        The rendered page is given either as its anchors or as its HTML. With `strict_anchors`,
+        only those anchors count. Without it, the anchors its Markdown source provides are
+        accepted as well."""
+        if isinstance(anchors, str):
+            anchors = HtmlProoferPlugin.rendered_anchors(anchors)
         if anchors and anchor in anchors:
             return True
         if strict_anchors and anchors is not None:

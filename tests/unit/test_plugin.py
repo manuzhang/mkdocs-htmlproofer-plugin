@@ -259,6 +259,29 @@ def test_contains_anchor__strict_anchors(plugin, anchor, expected):
     assert plugin.contains_anchor(SOURCE, anchor, RENDERED, True) == expected
 
 
+@pytest.mark.parametrize(
+    'anchor, expected', [
+        ('heading', True),
+        # An anchor is matched whole, never as a piece of the HTML around it
+        ('eading', False),
+        ('id', False),
+        ('h1', False),
+    ]
+)
+def test_contains_anchor__rendered_html_in_place_of_anchors(plugin, anchor, expected):
+    # A page may be given as its HTML rather than its anchors, and reads the same either way
+    html = '<h1 id="heading">Heading</h1>'
+
+    assert plugin.contains_anchor(SOURCE, anchor, html, True) == expected
+    assert plugin.contains_anchor(SOURCE, anchor, HtmlProoferPlugin.rendered_anchors(html),
+                                  True) == expected
+
+
+def test_contains_anchor__rendered_html_matches_whole_ids(plugin):
+    assert plugin.contains_anchor('', 'foobar', '<div id="foobar">', True) is True
+    assert plugin.contains_anchor('', 'bar', '<div id="foobar">', True) is False
+
+
 @pytest.mark.parametrize('anchor', ('heading', 'html-anchor', 'attr-list-anchor'))
 def test_contains_anchor__strict_anchors_without_rendered_content(plugin, anchor):
     # A page which hasn't been rendered is checked against its source, so nothing fails spuriously
