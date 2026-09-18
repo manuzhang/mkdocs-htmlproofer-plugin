@@ -6,7 +6,7 @@ import pathlib
 import re
 import threading
 import time
-from typing import Dict, FrozenSet, List, Optional, Set
+from typing import Dict, FrozenSet, List, Optional, Set, Tuple, Union
 import urllib.parse
 import uuid
 
@@ -59,14 +59,24 @@ urllib3.disable_warnings()
 
 @lru_cache(maxsize=1024)
 def parse_anchors(rendered_content: str) -> FrozenSet[str]:
-    """The anchors a rendered page provides, parsed once per page rather than per link."""
+    """The anchors of a page kept elsewhere, such as a page's body, parsed once per page.
+
+    The cache holds what it is given, so only pass content something else already retains."""
+    return read_anchors(rendered_content)
+
+
+def read_anchors(rendered_content: str) -> FrozenSet[str]:
+    """The anchors a rendered page provides, which are the ids and anchor names it contains."""
     soup = BeautifulSoup(rendered_content, 'html.parser')
-    for template in soup.select('template'):
-        # A template's contents are inert, so a fragment can't navigate to the ids within it
-        template.decompose()
-    # `name` is the legacy form of `id`, which only makes an anchor navigable
-    return frozenset({str(tag['id']) for tag in soup.select('[id]')}
-                     | {str(tag['name']) for tag in soup.select('a[name]')})
+    # A template's contents are inert, so a fragment can't navigate to the ids within it, though
+    # the template element itself stays in the document and keeps its own id
+
+    def navigable(tag) -> bool:
+        return tag.find_parent('template') is None
+
+    # `name` makes an anchor navigable, as an older form of `id`
+    return frozenset({str(tag['id']) for tag in soup.select('[id]') if navigable(tag)}
+                     | {str(tag['name']) for tag in soup.select('a[name]') if navigable(tag)})
 
 
 def log_info(msg, *args, **kwargs):
@@ -104,13 +114,22 @@ class HtmlProoferPlugin(BasePlugin):
     def __init__(self):
         self._local = threading.local()
         self.files = []
-        # The full output of each page which has been rendered, by source path
-        self.rendered_pages: Dict[str, str] = {}
+        # The anchors each rendered page provides, by source path
+        self.rendered_pages: Dict[str, FrozenSet[str]] = {}
+        # Links whose target hadn't been rendered when they were checked, by source path
+        self.deferred_urls: List[Tuple[str, str]] = []
         self.scheme_handlers = {
             "http": partial(HtmlProoferPlugin.resolve_web_scheme, self),
             "https": partial(HtmlProoferPlugin.resolve_web_scheme, self),
         }
         super().__init__()
+
+    def file_index(self) -> Dict[str, File]:
+        """The files of the site, looked up by the URL they are built to and by their source."""
+        index: Dict[str, File] = {}
+        index.update({os.path.normpath(file.url): file for file in self.files})
+        index.update({os.path.normpath(file.src_uri): file for file in self.files})
+        return index
 
     def _get_session(self) -> requests.Session:
         """Return a per-thread `requests.Session`, creating one lazily if needed."""
@@ -124,6 +143,14 @@ class HtmlProoferPlugin(BasePlugin):
         return session
 
     def on_post_build(self, config: Config) -> None:
+        # Every page has been rendered by now, so the links whose target was still being built
+        # can be settled against the anchors it turned out to provide. One index serves them all.
+        deferred, self.deferred_urls = self.deferred_urls, []
+        if deferred:
+            files = self.file_index()
+            for url, src_path in deferred:
+                self.check_url(url, src_path, set(), files, defer=False)
+
         if self.config['raise_error_after_finish'] and self.invalid_links:
             raise PluginError("Invalid links present.")
 
@@ -142,17 +169,16 @@ class HtmlProoferPlugin(BasePlugin):
         # a dictionary for faster lookups. Prior to this point, files are
         # still being updated so creating a dictionary before now would result
         # in incorrect values appearing as the key.
-        opt_files = {}
-        opt_files.update({os.path.normpath(file.url): file for file in self.files})
-        opt_files.update({os.path.normpath(file.src_uri): file for file in self.files})
+        opt_files = self.file_index()
 
         # Optimization: only parse links and headings
         # li, sup are used for footnotes
         strainer = SoupStrainer(('a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'sup', 'img'))
 
-        # Keep this page's full output, so a link into it is checked against everything it renders,
-        # the theme's anchors included, rather than against its Markdown body alone
-        self.rendered_pages[page.file.src_uri] = output_content
+        # Keep the anchors of this page's full output, so a link into it is checked against
+        # everything it renders, the theme's included, rather than its Markdown body alone. Read
+        # them without the cache, which would hold the output this is replacing.
+        self.rendered_pages[page.file.src_uri] = read_anchors(output_content)
 
         content = output_content if self.config['validate_rendered_template'] else page.content
         soup = BeautifulSoup(str(content), 'html.parser', parse_only=strainer)
@@ -253,10 +279,26 @@ class HtmlProoferPlugin(BasePlugin):
             src_path: str,
             all_element_ids: Set[str],
             files: Dict[str, File],
+            defer: bool = True,
             ) -> None:
+        if defer and self.target_is_unrendered(url, src_path, files):
+            # Only part of the target's anchors are known, so a verdict now would depend on the
+            # order pages are built in, and reporting one would warn about a link which may hold.
+            # Settle it once the whole page has been rendered.
+            self.deferred_urls.append((url, src_path))
+            return
+
         url_status = self.get_url_status(url, src_path, all_element_ids, files)
         if self.bad_url(url_status) and self.is_error(self.config, url, url_status):
             self.report_invalid_url(url, url_status, src_path)
+
+    def target_is_unrendered(self, url: str, src_path: str, files: Dict[str, File]) -> bool:
+        """Check if a link points at an anchor of a page which hasn't been rendered yet."""
+        match = MARKDOWN_ANCHOR_PATTERN.match(url)
+        if match is None or not match.groups()[2]:
+            return False
+        source_file = HtmlProoferPlugin.find_source_file(match.groups()[0], src_path, files)
+        return source_file is not None and source_file.src_uri not in self.rendered_pages
 
     def get_url_status(
             self,
@@ -288,7 +330,7 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def is_url_target_valid(url: str, src_path: str, files: Dict[str, File],
                             strict_anchors: bool = False,
-                            rendered_pages: Optional[Dict[str, str]] = None) -> bool:
+                            rendered_pages: Optional[Dict[str, FrozenSet[str]]] = None) -> bool:
         match = MARKDOWN_ANCHOR_PATTERN.match(url)
         if match is None:
             return True
@@ -307,13 +349,14 @@ class HtmlProoferPlugin(BasePlugin):
                     return False
                 # A page's full output covers the anchors its theme renders as well, and is there
                 # once it has been built; until then its Markdown body is what's available
-                rendered_content = (rendered_pages or {}).get(source_file.src_uri)
-                if rendered_content is None:
-                    rendered_content = getattr(source_file.page, 'content', None)
+                anchors = (rendered_pages or {}).get(source_file.src_uri)
+                if anchors is None:
+                    anchors = HtmlProoferPlugin.rendered_anchors(
+                        getattr(source_file.page, 'content', None))
                 # A fragment is percent-encoded in the URL, while an id is written as it renders
                 anchor = urllib.parse.unquote(optional_anchor)
                 if not HtmlProoferPlugin.contains_anchor(source_file.page.markdown, anchor,
-                                                         rendered_content, strict_anchors):
+                                                         anchors, strict_anchors):
                     return False
 
         return True
@@ -350,15 +393,19 @@ class HtmlProoferPlugin(BasePlugin):
             return None
 
     @staticmethod
-    def contains_anchor(markdown: str, anchor: str, rendered_content: Optional[str] = None,
+    def contains_anchor(markdown: str, anchor: str,
+                        anchors: Union[str, FrozenSet[str], None] = None,
                         strict_anchors: bool = False) -> bool:
-        """Check if a page provides an anchor, from the ids of its rendered HTML.
+        """Check if a page provides an anchor, from those of its rendered HTML.
 
-        With `strict_anchors`, only those ids count. Without it, the anchors its Markdown source
-        provides are accepted as well."""
-        if anchor in HtmlProoferPlugin.rendered_anchors(rendered_content):
+        The rendered page is given either as its anchors or as its HTML. With `strict_anchors`,
+        only those anchors count. Without it, the anchors its Markdown source provides are
+        accepted as well."""
+        if isinstance(anchors, str):
+            anchors = HtmlProoferPlugin.rendered_anchors(anchors)
+        if anchors and anchor in anchors:
             return True
-        if strict_anchors and rendered_content is not None:
+        if strict_anchors and anchors is not None:
             return False
         # The page hasn't been rendered yet, or its source anchors are accepted too
         return HtmlProoferPlugin.source_contains_anchor(markdown, anchor)

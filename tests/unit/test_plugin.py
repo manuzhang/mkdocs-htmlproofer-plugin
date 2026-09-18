@@ -199,9 +199,11 @@ def test_rendered_anchors__name_only_makes_an_anchor_navigable():
 
 
 def test_rendered_anchors__template_contents_are_inert():
-    rendered = '<template><div id="prototype"></div></template><div id="live"></div>'
+    # The template element stays in the document, only what it holds is inert
+    rendered = ('<template id="component"><div id="prototype"></div></template>'
+                '<div id="live"></div>')
 
-    assert HtmlProoferPlugin.rendered_anchors(rendered) == {'live'}
+    assert HtmlProoferPlugin.rendered_anchors(rendered) == {'component', 'live'}
 
 
 def test_rendered_anchors__parses_each_page_once():
@@ -212,6 +214,19 @@ def test_rendered_anchors__parses_each_page_once():
     HtmlProoferPlugin.rendered_anchors(rendered)
 
     assert htmlproofer.plugin.parse_anchors.cache_info().hits == 1
+
+
+def test_on_post_page__keeps_anchors_rather_than_the_output():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({})
+    page = Mock(spec=Page, file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'), content='')
+    htmlproofer.plugin.parse_anchors.cache_clear()
+
+    plugin.on_post_page('<h1 id="rendered">R</h1>', page, Mock(spec=Config))
+
+    assert plugin.rendered_pages == {'blah.md': frozenset({'rendered'})}
+    # The cache holds whatever it is given, so a page's output must not go through it
+    assert htmlproofer.plugin.parse_anchors.cache_info().currsize == 0
 
 
 @pytest.mark.parametrize(
@@ -242,6 +257,29 @@ def test_source_contains_anchor__setext_heading(plugin, markdown, anchor, expect
 )
 def test_contains_anchor__strict_anchors(plugin, anchor, expected):
     assert plugin.contains_anchor(SOURCE, anchor, RENDERED, True) == expected
+
+
+@pytest.mark.parametrize(
+    'anchor, expected', [
+        ('heading', True),
+        # An anchor is matched whole, never as a piece of the HTML around it
+        ('eading', False),
+        ('id', False),
+        ('h1', False),
+    ]
+)
+def test_contains_anchor__rendered_html_in_place_of_anchors(plugin, anchor, expected):
+    # A page may be given as its HTML rather than its anchors, and reads the same either way
+    html = '<h1 id="heading">Heading</h1>'
+
+    assert plugin.contains_anchor(SOURCE, anchor, html, True) == expected
+    assert plugin.contains_anchor(SOURCE, anchor, HtmlProoferPlugin.rendered_anchors(html),
+                                  True) == expected
+
+
+def test_contains_anchor__rendered_html_matches_whole_ids(plugin):
+    assert plugin.contains_anchor('', 'foobar', '<div id="foobar">', True) is True
+    assert plugin.contains_anchor('', 'bar', '<div id="foobar">', True) is False
 
 
 @pytest.mark.parametrize('anchor', ('heading', 'html-anchor', 'attr-list-anchor'))
@@ -355,6 +393,66 @@ def test_get_url_status__anchors_are_scoped_to_their_page():
     # ... while page B provides neither, whichever page was built first
     assert plugin.get_url_status('b.html#banner', 'a.md', set(), files) == 404
     assert plugin.get_url_status('b.html#toc-collapse', 'a.md', set(), files) == 404
+
+
+def linked_pages():
+    mock_files = Files([
+        Mock(spec=File, src_path='a.md', dest_path='a.html', dest_uri='a.html', url='a.html',
+             src_uri='a.md', page=Mock(spec=Page, markdown='# A', content='<h1 id="a">A</h1>')),
+        Mock(spec=File, src_path='b.md', dest_path='b.html', dest_uri='b.html', url='b.html',
+             src_uri='b.md', page=Mock(spec=Page, markdown='# B', content='<h1 id="b">B</h1>')),
+    ])
+    files = {}
+    files.update({os.path.normpath(file.url): file for file in mock_files})
+    files.update({file.src_uri: file for file in mock_files})
+    return files
+
+
+@pytest.mark.parametrize('strict_anchors', (False, True))
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_check_url__defers_without_warning(log_warning_mock, strict_anchors):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': strict_anchors, 'raise_error_after_finish': True})
+
+    # Page A hasn't been built, so the anchors of its theme aren't known in either mode
+    plugin.check_url('a.html#toc-collapse', 'b.md', set(), linked_pages())
+
+    assert plugin.deferred_urls == [('a.html#toc-collapse', 'b.md')]
+    # Nothing is reported about a link which may well hold
+    log_warning_mock.assert_not_called()
+    assert plugin.invalid_links is False
+
+
+def test_check_url__defers_a_link_into_a_page_not_yet_rendered():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': True, 'raise_error_after_finish': True})
+    files = linked_pages()
+    plugin.files = list(files.values())
+
+    # Page A hasn't been built, so this anchor of its theme isn't known yet
+    plugin.check_url('a.html#toc-collapse', 'b.md', set(), files)
+    assert plugin.invalid_links is False
+
+    plugin.rendered_pages['a.md'] = frozenset({'a', 'toc-collapse'})
+    plugin.on_post_build(Mock(spec=Config))
+
+    # The verdict is the same whichever page was built first
+    assert plugin.invalid_links is False
+
+
+def test_check_url__reports_a_deferred_link_whose_anchor_never_appears():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'strict_anchors': True, 'raise_error_after_finish': True})
+    files = linked_pages()
+    plugin.files = list(files.values())
+
+    plugin.check_url('a.html#missing', 'b.md', set(), files)
+    assert plugin.invalid_links is False
+
+    plugin.rendered_pages['a.md'] = frozenset({'a'})
+    with pytest.raises(PluginError):
+        plugin.on_post_build(Mock(spec=Config))
+    assert plugin.invalid_links is True
 
 
 def test_get_url_status__same_page_percent_encoded_fragment(plugin, empty_files):
