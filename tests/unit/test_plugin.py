@@ -229,6 +229,25 @@ def test_on_post_page__keeps_anchors_rather_than_the_output():
     assert htmlproofer.plugin.parse_anchors.cache_info().currsize == 0
 
 
+@patch('htmlproofer.plugin.log_warning')
+def test_on_post_page__same_page_anchor_on_any_element(log_warning_mock):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({})
+    # The links are written in the page's body, while an id renders on whichever element it is
+    # given to, which is not only the ones a link is looked for on
+    body = '<a href="#paragraph">a</a><a href="#fnref:1">b</a><a href="#missing">c</a>'
+    output = f'<p id="paragraph">P</p><sup id="fnref:1">1</sup>{body}'
+    page = Mock(spec=Page, file=Mock(spec=File, src_path='blah.md', src_uri='blah.md'), content=body)
+    htmlproofer.plugin.parse_anchors.cache_clear()
+
+    plugin.on_post_page(output, page, Mock(spec=Config, data={'use_directory_urls': False}))
+
+    reported = [call.args[0] for call in log_warning_mock.call_args_list]
+    assert [warning for warning in reported if '#missing' in warning]
+    assert not [warning for warning in reported if '#paragraph' in warning]
+    assert not [warning for warning in reported if '#fnref:1' in warning]
+
+
 @pytest.mark.parametrize(
     'markdown, anchor, expected', [
         # A heading underlined with ='s or -'s provides an anchor too

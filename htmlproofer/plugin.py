@@ -178,12 +178,15 @@ class HtmlProoferPlugin(BasePlugin):
         # Keep the anchors of this page's full output, so a link into it is checked against
         # everything it renders, the theme's included, rather than its Markdown body alone. Read
         # them without the cache, which would hold the output this is replacing.
-        self.rendered_pages[page.file.src_uri] = read_anchors(output_content)
+        rendered = read_anchors(output_content)
+        self.rendered_pages[page.file.src_uri] = rendered
 
         content = output_content if self.config['validate_rendered_template'] else page.content
         soup = BeautifulSoup(str(content), 'html.parser', parse_only=strainer)
 
-        all_element_ids = set(str(tag['id']) for tag in soup.select('[id]'))
+        # The strainer above keeps the elements a link or a heading can be found on, which is not
+        # every element an id can be rendered on, so take the anchors from the whole output
+        all_element_ids = set(rendered)
         all_element_ids.add('')  # Empty anchor is commonly used, but not real
 
         urls = (set(str(a['href']) for a in soup.find_all('a', href=True)) |
