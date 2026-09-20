@@ -70,8 +70,16 @@ To get changes merged, create a pull request. Here are a few things to pay atten
 
 #### Commit Messages
 
-The summary of a commit should be concise and worded in an imperative mood.
+The summary of a commit is a [Conventional Commits][conventional-commits] type, a colon, and then a
+summary which is concise and worded in an imperative mood.
 ...a *what* mood? This should clear things up: *[How to Write a Git Commit Message][git-commit-message]*
+
+```
+fix: take a page's own anchors from everything it renders
+docs: say which links `strict_anchors` governs
+```
+
+A pull request is squashed when it is merged, so give it a title of the same form.
 
 #### Code Style
 
@@ -84,3 +92,4 @@ If it makes sense, writing tests for your PRs is always appreciated and will hel
 [Python 3]: https://www.python.org/
 [virtualenv]: https://virtualenv.pypa.io/
 [git-commit-message]: https://chris.beams.io/posts/git-commit/
+[conventional-commits]: https://www.conventionalcommits.org/
