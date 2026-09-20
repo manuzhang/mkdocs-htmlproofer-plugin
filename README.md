@@ -173,6 +173,12 @@ page holding it before the option is reached, so it reads the same either way. T
 headings, links, list items and images a page renders, so an id it renders on another element, such as
 a paragraph given one through `attr_list`, is not found among them.
 
+For a `page.md` whose heading is written as `## Renamed Heading { #custom-id }`:
+
+* `page.md#custom-id` is accepted whether the option is on or off.
+* `page.md#renamed-heading` is accepted by default, and reported with the option on.
+* `#renamed-heading`, written on `page.md` itself, is reported either way, the page rendering no such id.
+
 ```yaml
 plugins:
   - htmlproofer:
