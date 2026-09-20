@@ -167,11 +167,12 @@ Turn it on to accept only the anchors a page actually renders. This reports link
 anchor which doesn't exist, such as `#heading` for `## Heading {#custom-id}`, where `attr_list` replaces
 the generated anchor, or an anchor which only appears inside a fenced code block.
 
-What the option decides is a link written with a path, as `page.md#anchor`, including one pointing back
-into the page it is written on. A link written as a bare `#anchor` is resolved against the ids of the
-page holding it before the option is reached, so it reads the same either way. Those ids come from the
-headings, links, list items and images a page renders, so an id it renders on another element, such as
-a paragraph given one through `attr_list`, is not found among them.
+What the option decides is a link written with a path to a Markdown page, as `page.md#anchor`, including
+one pointing back into the page it is written on. An anchor on a page which isn't Markdown, such as an
+HTML file copied into the site, isn't checked either way. A link written as a bare `#anchor` is resolved
+against the ids of the page holding it before the option is reached, so it reads the same either way.
+Those ids come from the headings, links, list items, superscripts and images a page renders, so an id it
+renders on another element, such as a paragraph given one through `attr_list`, is not found among them.
 
 For a `page.md` whose heading is written as `## Renamed Heading { #custom-id }`:
 
