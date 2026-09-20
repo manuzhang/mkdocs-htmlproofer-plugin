@@ -167,11 +167,11 @@ Turn it on to accept only the anchors a page actually renders. This reports link
 anchor which doesn't exist, such as `#heading` for `## Heading {#custom-id}`, where `attr_list` replaces
 the generated anchor, or an anchor which only appears inside a fenced code block.
 
-This applies to links into another page, written as `page.md#anchor`. A link within a page, written as
-`#anchor`, is always checked against the ids that page renders, whether the option is on or off.
-
-Reading the Markdown source is what makes an anchor of a page the build never renders checkable at all,
-so that fallback stays in place even with the option on.
+What the option decides is a link written with a path, as `page.md#anchor`, including one pointing back
+into the page it is written on. A link written as a bare `#anchor` is resolved against the ids of the
+page holding it before the option is reached, so it reads the same either way. Those ids come from the
+headings, links, list items and images a page renders, so an id it renders on another element, such as
+a paragraph given one through `attr_list`, is not found among them.
 
 ```yaml
 plugins:
