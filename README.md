@@ -161,11 +161,20 @@ plugins:
 ### `strict_anchors`
 
 Off by default, when an anchor is accepted if either the rendered page contains it or its Markdown
-source provides it.
+source provides it. Turn it on to accept only the anchors a page renders, reporting a link to one which
+doesn't exist, such as `#heading` where `attr_list` replaced it in `## Heading {#custom-id}`, or an
+anchor appearing only inside a fenced code block.
 
-Turn it on to accept only the anchors a page actually renders. This reports links that point at an
-anchor which doesn't exist, such as `#heading` for `## Heading {#custom-id}`, where `attr_list` replaces
-the generated anchor, or an anchor which only appears inside a fenced code block.
+It decides links written with a path to a Markdown page, `page.md#anchor`, including one back into the
+page holding it. An anchor on a page which isn't Markdown isn't checked at all. A bare `#anchor` reads
+the same either way, resolved against the ids rendered on headings, links, list items, superscripts and
+images, so one on a paragraph is missed.
+
+For a `page.md` whose heading is written as `## Renamed Heading { #custom-id }`:
+
+* `page.md#custom-id` is accepted whether the option is on or off.
+* `page.md#renamed-heading` is accepted by default, and reported with the option on.
+* `#renamed-heading`, written on `page.md` itself, is reported either way, the page rendering no such id.
 
 ```yaml
 plugins:
