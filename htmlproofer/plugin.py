@@ -8,7 +8,6 @@ import threading
 import time
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple, Union
 import urllib.parse
-import uuid
 
 from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
@@ -22,8 +21,11 @@ import requests
 import urllib3
 
 URL_TIMEOUT = 10.0
-_URL_BOT_ID = f'Bot {uuid.uuid4()}'
-URL_HEADERS = {'User-Agent': _URL_BOT_ID, 'Accept-Language': '*'}
+# Sites and the CDNs in front of them increasingly answer anything which doesn't look like a browser
+# with a 403, which reads as a broken link although the page opens in one
+DEFAULT_USER_AGENT = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                      '(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36')
+URL_HEADERS = {'User-Agent': DEFAULT_USER_AGENT, 'Accept-Language': '*'}
 NAME = "htmlproofer"
 
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
@@ -109,6 +111,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('ignore_pages', config_options.Type(list, default=[])),
         ('retry_max_times', config_options.Type(int, default=0)),
         ('max_workers', config_options.Type(int, default=None)),
+        ('user_agent', config_options.Type(str, default=DEFAULT_USER_AGENT)),
     )
 
     def __init__(self):
@@ -137,7 +140,7 @@ class HtmlProoferPlugin(BasePlugin):
         if session is None:
             session = requests.Session()
             session.verify = False
-            session.headers.update(URL_HEADERS)
+            session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent']})
             session.max_redirects = 5
             self._local.session = session
         return session
