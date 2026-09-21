@@ -167,8 +167,7 @@ anchor appearing only inside a fenced code block.
 
 It decides links written with a path to a Markdown page, `page.md#anchor`, including one back into the
 page holding it. An anchor on a page which isn't Markdown isn't checked at all. A bare `#anchor` reads
-the same either way, resolved against the ids rendered on headings, links, list items, superscripts and
-images, so one on a paragraph is missed.
+the same either way, resolved against every id the page renders, the theme's included.
 
 For a `page.md` whose heading is written as `## Renamed Heading { #custom-id }`:
 
