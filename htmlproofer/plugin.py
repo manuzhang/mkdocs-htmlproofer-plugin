@@ -469,9 +469,10 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def is_error(config: Config, url: str, url_status: int) -> bool:
         # A status written in YAML as `-1:` is read as a number, and as `'-1':` a string, so a
-        # negative one is easily quoted to keep the parser happy and then matches neither
+        # negative one is easily quoted to keep the parser happy. Both spellings are one status,
+        # and a config may carry either or both, so take the URLs under each
         configured = config['raise_error_excludes']
-        excludes = configured.get(url_status, configured.get(str(url_status), []))
+        excludes = [*configured.get(url_status, []), *configured.get(str(url_status), [])]
 
         if any(fnmatch.fnmatch(url, exclude_url) for exclude_url in excludes):
             return False

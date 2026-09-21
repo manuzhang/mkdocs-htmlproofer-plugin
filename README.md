@@ -90,8 +90,9 @@ plugins:
         -1: ['https://flaky.example.com/*']
 ```
 
-A URL which couldn't be requested at all, such as one whose host wouldn't resolve or which timed out,
-is reported as `-1` and excluded under that status.
+A URL which couldn't be requested at all, such as one whose host wouldn't resolve or which redirected
+too many times, is reported as `-1` and excluded under that status. A request which times out is
+reported as `504`.
 
 ### `ignore_urls`
 

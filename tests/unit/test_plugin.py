@@ -905,10 +905,22 @@ def test_resolve_web_scheme__no_retry_for_excluded_status(sleep_mock, mock_reque
     'status', (-1, '-1')
 )
 def test_is_error__status_written_as_a_number_or_a_string(status):
-    url = 'https://timing-out.example.com/page'
-    config = {'raise_error_excludes': {status: ['https://timing-out.example.com/*']}}
+    url = 'https://unreachable.example.com/page'
+    config = {'raise_error_excludes': {status: ['https://unreachable.example.com/*']}}
 
     assert HtmlProoferPlugin.is_error(config, url, -1) is False
+    assert HtmlProoferPlugin.is_error(config, 'https://elsewhere.example.com/page', -1) is True
+
+
+def test_is_error__status_written_both_ways():
+    # Both spellings are the one status, so neither set of URLs is the one that counts
+    config = {'raise_error_excludes': {
+        -1: ['https://unreachable.example.com/*'],
+        '-1': ['https://also-unreachable.example.com/*'],
+    }}
+
+    assert HtmlProoferPlugin.is_error(config, 'https://unreachable.example.com/page', -1) is False
+    assert HtmlProoferPlugin.is_error(config, 'https://also-unreachable.example.com/page', -1) is False
     assert HtmlProoferPlugin.is_error(config, 'https://elsewhere.example.com/page', -1) is True
 
 
