@@ -900,6 +900,18 @@ def test_resolve_web_scheme__no_retry_for_excluded_status(sleep_mock, mock_reque
     sleep_mock.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    # A status is read from YAML as a number when written `-1:` and as a string when written `'-1':`
+    'status', (-1, '-1')
+)
+def test_is_error__status_written_as_a_number_or_a_string(status):
+    url = 'https://timing-out.example.com/page'
+    config = {'raise_error_excludes': {status: ['https://timing-out.example.com/*']}}
+
+    assert HtmlProoferPlugin.is_error(config, url, -1) is False
+    assert HtmlProoferPlugin.is_error(config, 'https://elsewhere.example.com/page', -1) is True
+
+
 @patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
 def test_resolve_web_scheme__no_retry_for_malformed_url(sleep_mock, mock_requests):
     plugin = HtmlProoferPlugin()
