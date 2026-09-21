@@ -87,7 +87,11 @@ plugins:
         504: ['https://www.mkdocs.org/']
         404: ['https://github.com/manuzhang/*']
         400: ['*']
+        -1: ['https://flaky.example.com/*']
 ```
+
+A URL which couldn't be requested at all, such as one whose host wouldn't resolve or which timed out,
+is reported as `-1` and excluded under that status.
 
 ### `ignore_urls`
 
