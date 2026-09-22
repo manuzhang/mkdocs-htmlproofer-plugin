@@ -219,6 +219,20 @@ plugins:
       max_workers: 16
 ```
 
+### `user_agent`
+
+The `User-Agent` to send when requesting an external URL. A browser's by default, because sites and the
+CDNs in front of them increasingly answer anything else with a `403`, which is reported as a broken link
+although the page opens in a browser.
+
+Set it to identify your build instead:
+
+```yaml
+plugins:
+  - htmlproofer:
+      user_agent: 'Bot (https://example.com/)'
+```
+
 ## Compatibility with `attr_list` extension
 
 If you need to manually specify anchors make use of the `attr_list` [extension](https://python-markdown.github.io/extensions/attr_list) in the markdown.

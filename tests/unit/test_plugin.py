@@ -924,6 +924,23 @@ def test_is_error__status_written_both_ways():
     assert HtmlProoferPlugin.is_error(config, 'https://elsewhere.example.com/page', -1) is True
 
 
+def test_get_session__requests_as_a_browser():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({})
+
+    headers = plugin._get_session().headers
+
+    assert headers['User-Agent'].startswith('Mozilla/5.0')
+    assert headers['Accept-Language'] == '*'
+
+
+def test_get_session__user_agent_can_be_configured():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({'user_agent': 'Bot (https://example.com/)'})
+
+    assert plugin._get_session().headers['User-Agent'] == 'Bot (https://example.com/)'
+
+
 @patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
 def test_resolve_web_scheme__no_retry_for_malformed_url(sleep_mock, mock_requests):
     plugin = HtmlProoferPlugin()
