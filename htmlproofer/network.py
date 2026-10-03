@@ -71,8 +71,10 @@ def connect_checked(connection, adapter):
                 sock.setsockopt(*option)
             if connection.source_address:
                 sock.bind(connection.source_address)
-            adapter.watch(sock)
             sock.connect(sockaddr)
+            # On Windows a duplicate made before connect can retain an unconnected state,
+            # so its shutdown cannot interrupt reads on the connected socket.
+            adapter.watch(sock)
             return sock
         except requests.exceptions.RequestException:
             sock.close()
@@ -133,7 +135,7 @@ class CheckedAdapter(requests.adapters.HTTPAdapter):
     def watch(self, sock: socket.socket) -> None:
         with self._lock:
             self.check_deadline()
-            # A duplicate retains access to the underlying transport after TLS wraps the
+            # A connected duplicate retains access to the transport after TLS wraps the
             # original socket. Shutdown interrupts reads even during headers/decompression,
             # when a progressing server might never yield an iter_content chunk.
             self._sockets.append(sock.dup())

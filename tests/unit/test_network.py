@@ -277,7 +277,9 @@ def test_https_authenticates_certificates_and_hostnames(servers, tmp_path):
 
     bounded = configured_plugin(allow_private_hosts=['localhost'], ca_bundle=str(ca_path),
                                 skip_downloads=False, request_timeout=0.2)
+    start = time.monotonic()
     assert bounded.resolve_web_scheme(url + '/slow-body') == 504
+    assert time.monotonic() - start < 1.5
 
 
 def test_https_redirect_cannot_downgrade(servers, tmp_path):
