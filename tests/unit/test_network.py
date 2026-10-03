@@ -158,6 +158,9 @@ def servers(monkeypatch):
         return resolve(host, port, **kwargs)
 
     monkeypatch.setattr(socket, 'getaddrinfo', listener_addresses)
+    # HTTPServer reverse-resolves its bind address for a display name. The fixture needs
+    # no external DNS, and hosted macOS resolvers can stall even on loopback PTR queries.
+    monkeypatch.setattr(socket, 'getfqdn', lambda host='': host or 'localhost')
 
     def start(context=None):
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
