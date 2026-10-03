@@ -146,8 +146,18 @@ class Handler(BaseHTTPRequestHandler):
 
 
 @pytest.fixture
-def servers():
+def servers(monkeypatch):
     running = []
+    resolve = socket.getaddrinfo
+
+    def listener_addresses(host, port, **kwargs):
+        # These fixtures listen on IPv4 only. Windows can spend seconds attempting the
+        # absent IPv6 localhost listener on every redirect, obscuring the behavior under test.
+        if host == 'localhost':
+            kwargs['family'] = socket.AF_INET
+        return resolve(host, port, **kwargs)
+
+    monkeypatch.setattr(socket, 'getaddrinfo', listener_addresses)
 
     def start(context=None):
         server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
