@@ -82,7 +82,7 @@ def test_on_post_page(
     link_to_500 = '<a href="https://google.com"><a/>'
     iter_content = Mock()
     iter_content.side_effect = link_to_500
-    mock_requests.side_effect = [Mock(spec=Response, status_code=500, iter_content=iter_content)]
+    mock_requests.side_effect = [Mock(spec=Response, status_code=500, headers={}, iter_content=iter_content)]
 
     plugin.files = empty_files
     page = Mock(
@@ -146,8 +146,10 @@ def test_on_post_page__img_without_src():
         'http://app_server/#foo',
     ),
 )
-def test_get_url_status__ignore_local_servers(plugin, empty_files, url):
-    assert plugin.get_url_status(url, 'src/path.md', set(), empty_files) == 0
+def test_get_url_status__local_servers_use_destination_policy(plugin, empty_files, url):
+    with patch.object(plugin, 'get_external_url', return_value=-1) as resolve:
+        assert plugin.get_url_status(url, 'src/path.md', set(), empty_files) == -1
+        resolve.assert_called_once_with(url, url.split(':')[0], 'src/path.md')
 
 
 @pytest.mark.parametrize(
@@ -341,6 +343,36 @@ def test_contains_anchor__accepts_rendered_or_source(plugin, anchor, expected):
 )
 def test_source_contains_anchor(plugin, markdown, anchor, expected):
     assert plugin.source_contains_anchor(markdown, anchor) == expected
+
+
+@pytest.mark.timeout(5)
+def test_source_anchors_with_many_unmatched_braces(plugin):
+    braces = '{' * 50000
+    assert not plugin.source_contains_anchor(braces, 'missing')
+    assert not plugin.source_contains_anchor('# ' + braces, 'missing')
+    assert plugin.source_contains_anchor(braces + '\n{#found .other}', 'found')
+
+
+@pytest.mark.parametrize('heading, anchor, expected', [
+    ('Heading {: #custom .other key=value}', 'custom', True),
+    ('Heading {#first} {#second}', 'second', True),
+    ('Heading {# spaced}', 'spaced', False),
+    ('Heading {.other}', 'heading', True),
+    ('Heading {#custom .other}', 'heading', True),
+])
+def test_attribute_list_compatibility(plugin, heading, anchor, expected):
+    assert plugin.source_contains_anchor('# ' + heading, anchor) == expected
+
+
+@pytest.mark.timeout(5)
+def test_deep_rendered_anchors_and_nested_templates():
+    depth = 5000
+    html = ''.join(f'<div id="a{i}">' for i in range(depth)) + '</div>' * depth
+    html += ('<template id="live-template"><a name="hidden"></a>'
+             '<template id="hidden-template"><div id="hidden-id"></div></template></template>'
+             '<a id="outside" name="legacy"></a>')
+    anchors = HtmlProoferPlugin.rendered_anchors(html)
+    assert anchors == {f'a{i}' for i in range(depth)} | {'live-template', 'outside', 'legacy'}
 
 
 @pytest.mark.parametrize('strict_anchors', (False, True))
@@ -822,7 +854,7 @@ def test_report_invalid_url__not_raise_error__only_log_warning_is_called(log_war
 
 
 def mock_response(status_code):
-    return Mock(spec=Response, status_code=status_code, iter_content=Mock(return_value=[b'content']))
+    return Mock(spec=Response, status_code=status_code, headers={}, iter_content=Mock(return_value=[b'content']))
 
 
 @pytest.mark.parametrize(
@@ -837,7 +869,7 @@ def mock_response(status_code):
 def test_resolve_web_scheme__request_exception(plugin, mock_requests, exception, expected_status):
     mock_requests.side_effect = exception
 
-    assert plugin.resolve_web_scheme('http://') == expected_status
+    assert plugin.resolve_web_scheme('https://example.com') == expected_status
 
 
 @pytest.mark.parametrize('skip_downloads', (False, True))
@@ -853,6 +885,7 @@ def test_resolve_web_scheme__response_is_closed(mock_requests, skip_downloads):
 
 
 def test_resolve_web_scheme__download_error(plugin, mock_requests):
+    plugin.config['skip_downloads'] = False
     response = mock_response(200)
     response.iter_content.side_effect = requests.exceptions.ChunkedEncodingError()
     mock_requests.side_effect = [response]
@@ -948,7 +981,7 @@ def test_resolve_web_scheme__no_retry_for_malformed_url(sleep_mock, mock_request
     mock_requests.side_effect = requests.exceptions.InvalidURL("No host supplied")
 
     assert plugin.resolve_web_scheme('http://') == -1
-    assert mock_requests.call_count == 1
+    assert mock_requests.call_count == 0
     sleep_mock.assert_not_called()
 
 
