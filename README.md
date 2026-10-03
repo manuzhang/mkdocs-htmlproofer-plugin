@@ -143,13 +143,48 @@ plugins:
 
 ### `validate_external_urls`
 
-Avoids validating any external URLs (i.e those starting with http:// or https://).
-This will be faster if you just want to validate local anchors, as it does not make any network requests.
+Enabled by default. Set it to `False` to validate local links and anchors without making any
+network requests. Disable external checks when building documentation from untrusted contributors
+if outbound requests are not needed; enforce build-host egress restrictions as additional protection.
+
+External checks only connect to public IPv4/IPv6 addresses by default. All resolved addresses must
+be public, including on redirect hops. Private, loopback, link-local, multicast, reserved, and
+translation/tunnel destinations are rejected as `-1`. Localhost links previously skipped implicitly
+now follow this policy; use `ignore_urls` to skip intentional example URLs.
+
+Checks reject credentials in URLs and HTTPS redirects to HTTP. Environment proxies and netrc
+credentials are not used. HTTPS certificates and hostnames are verified.
 
 ```yaml
 plugins:
   - htmlproofer:
       validate_external_urls: False
+```
+
+### `allow_private_hosts`
+
+An empty list by default. Trusted site operators can permit intentional internal checks by listing
+exact hostnames or IP literals (without schemes, paths, ports, or wildcards). Each listed host can
+connect to its resolved addresses, including private ones. Redirects to other hosts still require
+their own permission. Only allow hosts whose access is appropriate for every documentation
+contributor; a hostname permission also trusts that host's DNS administrator.
+
+```yaml
+plugins:
+  - htmlproofer:
+      allow_private_hosts: ['docs.internal.example']
+```
+
+### `ca_bundle`
+
+Defaults to the Requests trusted CA bundle. Set an explicit PEM CA bundle path when checking a
+site using private PKI. The bundle must include all CAs needed by the site's external checks.
+Certificate and hostname verification remain enabled. Environment CA-bundle variables are not used.
+
+```yaml
+plugins:
+  - htmlproofer:
+      ca_bundle: /path/to/trusted-ca-bundle.pem
 ```
 
 ### `validate_rendered_template`
@@ -188,13 +223,39 @@ plugins:
 
 ### `skip_downloads`
 
-Optionally skip downloading of a remote URLs content via GET request. This can
-considerably reduce the time taken to validate URLs.
+Defaults to `True`: perform a streaming GET, inspect status/redirect headers, then close the response
+without downloading its body. GET-only servers remain supported. Redirect bodies are always skipped.
+Set it to `False` to consume the final response body within the byte and time limits below. Requests
+ask for identity encoding; encoded bodies are rejected when downloads are enabled to avoid
+unbounded decompression work.
 
 ```yaml
 plugins:
   - htmlproofer:
       skip_downloads: True
+```
+
+### `max_download_bytes`
+
+Limits body consumption when `skip_downloads` is `False`. Defaults to 10485760 bytes (10 MiB),
+must be positive, and applies to observed bytes even if Content-Length is absent or incorrect.
+An excessive declared or observed size is reported as `-1`.
+
+### `request_timeout`
+
+A positive, finite total time budget in seconds for one external check attempt, including all its
+redirects and optional body reads. Defaults to `30.0`. A socket deadline interrupts continuously
+progressing reads; individual connection/read inactivity is also limited to ten seconds. Expiration
+is reported as `504`. DNS resolution uses the platform resolver; if it stalls, its operating-system
+timeout still applies, and no connection is made after the check's deadline has expired.
+Each configured retry gets a fresh budget; backoff delays are additional.
+
+```yaml
+plugins:
+  - htmlproofer:
+      skip_downloads: False
+      max_download_bytes: 1048576
+      request_timeout: 15.0
 ```
 
 ### `retry_max_times`

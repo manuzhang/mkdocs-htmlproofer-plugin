@@ -1,6 +1,7 @@
 import concurrent.futures
 import fnmatch
 from functools import lru_cache, partial
+import math
 import os.path
 import pathlib
 import re
@@ -9,7 +10,7 @@ import time
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple, Union
 import urllib.parse
 
-from bs4 import BeautifulSoup, SoupStrainer
+from bs4 import BeautifulSoup, SoupStrainer, Tag
 from markdown.extensions.toc import slugify
 from mkdocs import utils
 from mkdocs.config import Config, config_options
@@ -18,7 +19,8 @@ from mkdocs.plugins import BasePlugin
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
 import requests
-import urllib3
+
+from htmlproofer.network import CheckedAdapter, CheckSession, url_host
 
 URL_TIMEOUT = 10.0
 # Sites and the CDNs in front of them increasingly answer anything which doesn't look like a browser
@@ -29,17 +31,11 @@ URL_HEADERS = {'User-Agent': DEFAULT_USER_AGENT, 'Accept-Language': '*'}
 NAME = "htmlproofer"
 
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
-LOCAL_PATTERNS = [
-    re.compile(rf'https?://{local}')
-    for local in ('localhost', '127.0.0.1', 'app_server')
-]
 
 # Patterns for the anchors a Markdown source provides, which are accepted without `strict_anchors`
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
 HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
-ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
-ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
 IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 
 # Example emojis:
@@ -56,7 +52,24 @@ MALFORMED_URL_ERRORS = (
     requests.exceptions.MissingSchema,
 )
 
-urllib3.disable_warnings()
+
+def attribute_lists(text: str):
+    """Yield non-overlapping brace spans in one pass, including nested opening braces."""
+    start = None
+    for index, character in enumerate(text):
+        if character == '{' and start is None:
+            start = index
+        elif character == '}' and start is not None:
+            yield start, index + 1
+            start = None
+
+
+def attribute_anchors(text: str):
+    for start, end in attribute_lists(text):
+        contents = text[start + 1:end - 1]
+        _, marker, rest = contents.partition('#')
+        if marker:
+            yield rest.split(None, 1)[0] if rest and not rest[0].isspace() else ''
 
 
 @lru_cache(maxsize=1024)
@@ -73,12 +86,21 @@ def read_anchors(rendered_content: str) -> FrozenSet[str]:
     # A template's contents are inert, so a fragment can't navigate to the ids within it, though
     # the template element itself stays in the document and keeps its own id
 
-    def navigable(tag) -> bool:
-        return tag.find_parent('template') is None
-
-    # `name` makes an anchor navigable, as an older form of `id`
-    return frozenset({str(tag['id']) for tag in soup.select('[id]') if navigable(tag)}
-                     | {str(tag['name']) for tag in soup.select('a[name]') if navigable(tag)})
+    anchors: Set[str] = set()
+    # Iterate siblings with an explicit stack, so each edge is visited once without recursion.
+    stack = [iter(soup.children)]
+    while stack:
+        tag = next(stack[-1], None)
+        if tag is None:
+            stack.pop()
+        elif isinstance(tag, Tag):
+            if 'id' in tag.attrs:
+                anchors.add(str(tag['id']))
+            if tag.name == 'a' and 'name' in tag.attrs:
+                anchors.add(str(tag['name']))
+            if tag.name != 'template':
+                stack.append(iter(tag.children))
+    return frozenset(anchors)
 
 
 def log_info(msg, *args, **kwargs):
@@ -102,7 +124,11 @@ class HtmlProoferPlugin(BasePlugin):
         ('raise_error', config_options.Type(bool, default=False)),
         ('raise_error_after_finish', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
-        ('skip_downloads', config_options.Type(bool, default=False)),
+        ('skip_downloads', config_options.Type(bool, default=True)),
+        ('max_download_bytes', config_options.Type(int, default=10 * 1024 * 1024)),
+        ('request_timeout', config_options.Type(float, default=30.0)),
+        ('allow_private_hosts', config_options.ListOfItems(config_options.Type(str), default=[])),
+        ('ca_bundle', config_options.Type(str, default='')),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
         ('strict_anchors', config_options.Type(bool, default=False)),
@@ -138,10 +164,15 @@ class HtmlProoferPlugin(BasePlugin):
         """Return a per-thread `requests.Session`, creating one lazily if needed."""
         session = getattr(self._local, 'session', None)
         if session is None:
-            session = requests.Session()
-            session.verify = False
-            session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent']})
+            session = CheckSession()
+            session.trust_env = False
+            session.verify = self.config['ca_bundle'] or True
+            session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent'],
+                                    'Connection': 'close', 'Accept-Encoding': 'identity'})
             session.max_redirects = 5
+            adapter = CheckedAdapter(self.config['allow_private_hosts'])
+            session.mount('http://', adapter)
+            session.mount('https://', adapter)
             self._local.session = session
         return session
 
@@ -259,25 +290,66 @@ class HtmlProoferPlugin(BasePlugin):
             return -1
 
     def fetch_web_url_status(self, url: str) -> int:
+        session = self._get_session()
+        adapter = session.get_adapter(url)
+        assert isinstance(adapter, CheckedAdapter)
+        duration = self.config['request_timeout']
+        if not math.isfinite(duration) or duration <= 0 or self.config['max_download_bytes'] <= 0:
+            raise PluginError('request_timeout must be positive and finite; max_download_bytes must be positive')
+        adapter.begin(duration)
         try:
-            response = self._get_session().get(url, timeout=URL_TIMEOUT, stream=True)
-            try:
-                if self.config['skip_downloads'] is False:
-                    # Download the entire contents as to not break previous behaviour.
-                    for _ in response.iter_content(chunk_size=1024 * 1024):
-                        pass
-
-                return response.status_code
-            finally:
-                # Release the connection, which is kept open by `stream=True` otherwise.
-                response.close()
+            return self.fetch_redirect_chain(session, adapter, url)
         except requests.exceptions.Timeout:
             return 504
         except MALFORMED_URL_ERRORS:
             raise
         except requests.exceptions.RequestException:
             # e.g. ConnectionError, TooManyRedirects, InvalidURL, ChunkedEncodingError
-            return -1
+            return 504 if time.monotonic() >= adapter.deadline else -1
+        finally:
+            adapter.end()
+
+    def fetch_redirect_chain(self, session, adapter, url: str) -> int:
+        for hop in range(session.max_redirects + 1):
+            url_host(url)
+            timeout = min(URL_TIMEOUT, adapter.remaining())
+            response = session.get(url, timeout=timeout, stream=True, allow_redirects=False)
+            try:
+                location = response.headers.get('Location')
+                if response.status_code in (301, 302, 303, 307, 308) and location:
+                    if hop == session.max_redirects:
+                        raise requests.exceptions.TooManyRedirects()
+                    target = urllib.parse.urljoin(url, location)
+                    url_host(target)
+                    if urllib.parse.urlsplit(url).scheme == 'https' and urllib.parse.urlsplit(target).scheme != 'https':
+                        raise requests.exceptions.InvalidURL('HTTPS redirect downgrade is not allowed')
+                    url = target
+                else:
+                    if not self.config['skip_downloads']:
+                        self.consume_response(response, adapter)
+                    adapter.check_deadline()
+                    return response.status_code
+            finally:
+                response.close()
+        return -1
+
+    def consume_response(self, response, adapter) -> None:
+        limit = self.config['max_download_bytes']
+        # Status validation needs no decompression. Request identity encoding and reject a
+        # server that ignores it when body downloads are explicitly enabled.
+        if response.headers.get('Content-Encoding', 'identity').lower() != 'identity':
+            raise requests.exceptions.InvalidURL('encoded response bodies are not downloaded')
+        length = response.headers.get('Content-Length')
+        if length and length.isdecimal():
+            significant = length.lstrip('0') or '0'
+            if len(significant) > len(str(limit)) or int(significant) > limit:
+                raise requests.exceptions.InvalidURL('response exceeds max_download_bytes')
+        downloaded = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            adapter.check_deadline()
+            downloaded += len(chunk)
+            if downloaded > limit:
+                raise requests.exceptions.InvalidURL('response exceeds max_download_bytes')
 
     def check_url(
             self,
@@ -313,9 +385,6 @@ class HtmlProoferPlugin(BasePlugin):
             all_element_ids: Set[str],
             files: Dict[str, File]
     ) -> int:
-        if any(pat.match(url) for pat in LOCAL_PATTERNS):
-            return 0
-
         scheme, _, path, _, fragment = urllib.parse.urlsplit(url)
         if scheme:
             if self.config['validate_external_urls']:
@@ -447,7 +516,7 @@ class HtmlProoferPlugin(BasePlugin):
 
             # Any attribute list at end of paragraphs or after images can also generate an anchor (in
             # addition to the heading ones) so gather those and check as well
-            if anchor in re.findall(ATTRLIST_ANCHOR_PATTERN, line):
+            if anchor in attribute_anchors(line):
                 return True
 
         return False
@@ -455,7 +524,13 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def heading_anchor(heading: str) -> str:
         """The anchor a heading provides, slugified from its Markdown source."""
-        heading = re.sub(ATTRLIST_PATTERN, '', heading)
+        parts = []
+        previous = 0
+        for start, end in attribute_lists(heading):
+            parts.append(heading[previous:start])
+            previous = end
+        parts.append(heading[previous:])
+        heading = ''.join(parts)
         heading = re.sub(IMAGE_PATTERN, '', heading)
         heading = re.sub(EMOJI_PATTERN, '', heading)
         return slugify(heading, '-')
