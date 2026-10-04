@@ -19,7 +19,6 @@ from mkdocs.plugins import BasePlugin
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
 import requests
-import urllib3
 
 from htmlproofer.network import CheckedAdapter, CheckSession, url_host
 
@@ -54,9 +53,6 @@ MALFORMED_URL_ERRORS = (
     requests.exceptions.InvalidSchema,
     requests.exceptions.MissingSchema,
 )
-
-
-urllib3.disable_warnings()
 
 
 @lru_cache(maxsize=1024)
@@ -106,6 +102,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('max_download_bytes', config_options.Type(int, default=10 * 1024 * 1024)),
         ('request_timeout', config_options.Type(float, default=30.0)),
         ('allow_private_hosts', config_options.ListOfItems(config_options.Type(str), default=[])),
+        ('ca_bundle', config_options.Type(str, default='')),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
         ('strict_anchors', config_options.Type(bool, default=False)),
@@ -143,7 +140,7 @@ class HtmlProoferPlugin(BasePlugin):
         if session is None:
             session = CheckSession()
             session.trust_env = False
-            session.verify = False
+            session.verify = self.config['ca_bundle'] or True
             session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent'],
                                     'Connection': 'close', 'Accept-Encoding': 'identity'})
             session.max_redirects = 5
@@ -298,6 +295,8 @@ class HtmlProoferPlugin(BasePlugin):
                         raise requests.exceptions.TooManyRedirects()
                     target = urllib.parse.urljoin(url, location)
                     url_host(target)
+                    if urllib.parse.urlsplit(url).scheme == 'https' and urllib.parse.urlsplit(target).scheme != 'https':
+                        raise requests.exceptions.InvalidURL('HTTPS redirect downgrade is not allowed')
                     url = target
                 else:
                     if not self.config['skip_downloads']:

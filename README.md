@@ -152,7 +152,8 @@ be public, including on redirect hops. Private, loopback, link-local, multicast,
 translation/tunnel destinations are rejected as `-1`. Localhost links previously skipped implicitly
 now follow this policy; use `ignore_urls` to skip intentional example URLs.
 
-Checks reject credentials in URLs. Environment proxies and netrc credentials are not used.
+Checks reject credentials in URLs and HTTPS redirects to HTTP. Environment proxies and netrc
+credentials are not used. HTTPS certificates and hostnames are verified.
 
 ```yaml
 plugins:
@@ -172,6 +173,18 @@ contributor; a hostname permission also trusts that host's DNS administrator.
 plugins:
   - htmlproofer:
       allow_private_hosts: ['docs.internal.example']
+```
+
+### `ca_bundle`
+
+Defaults to the Requests trusted CA bundle. Set an explicit PEM CA bundle path when checking a
+site using private PKI. The bundle must include all CAs needed by the site's external checks.
+Certificate and hostname verification remain enabled. Environment CA-bundle variables are not used.
+
+```yaml
+plugins:
+  - htmlproofer:
+      ca_bundle: /path/to/trusted-ca-bundle.pem
 ```
 
 ### `validate_rendered_template`
