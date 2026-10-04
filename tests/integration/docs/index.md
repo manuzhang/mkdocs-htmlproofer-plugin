@@ -57,7 +57,7 @@ More information about plugins in the [MkDocs documentation](https://www.mkdocs.
 
 ## `localhost` URLs
 
-`localhost` URLs are safely ignored by `mkdocs-htmlproofer-plugin` and will not raise warnings:
+These example `localhost` URLs are explicitly skipped with `ignore_urls` in the test configuration:
 
 - <http://localhost>
 

@@ -19,4 +19,9 @@ plugins:
             '../../../tests',
           ]
         skip_downloads: True
-        retry_max_times: 3 
+        ignore_urls:
+          - 'http://localhost'
+          - 'https://localhost'
+          - 'http://127.0.0.1'
+          - 'https://127.0.0.1'
+        retry_max_times: 3
