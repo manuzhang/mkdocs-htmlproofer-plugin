@@ -14,6 +14,7 @@ isort
 
 # Testing.
 pytest
+trustme
 pytest-timeout
 
 # Publishing.
