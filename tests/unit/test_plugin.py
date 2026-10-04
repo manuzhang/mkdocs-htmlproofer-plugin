@@ -974,3 +974,22 @@ def test_check_url__local_url_is_not_retried(sleep_mock, plugin):
     with pytest.raises(PluginError):
         plugin.check_url('non-existing.html', 'index.md', set(), {})
     sleep_mock.assert_not_called()
+
+
+@pytest.mark.timeout(5)
+def test_source_anchors_with_many_unmatched_braces(plugin):
+    braces = '{' * 50000
+    assert not plugin.source_contains_anchor(braces, 'missing')
+    assert not plugin.source_contains_anchor('# ' + braces, 'missing')
+    assert plugin.source_contains_anchor(braces + '\n{#found .other}', 'found')
+
+
+@pytest.mark.parametrize('heading, anchor, expected', [
+    ('Heading {: #custom .other key=value}', 'custom', True),
+    ('Heading {#first} {#second}', 'second', True),
+    ('Heading {# spaced}', 'spaced', False),
+    ('Heading {.other}', 'heading', True),
+    ('Heading {#custom .other}', 'heading', True),
+])
+def test_attribute_list_compatibility(plugin, heading, anchor, expected):
+    assert plugin.source_contains_anchor('# ' + heading, anchor) == expected
