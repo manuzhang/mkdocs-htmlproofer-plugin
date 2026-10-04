@@ -12,9 +12,11 @@ types-Markdown
 # Formatting.
 isort
 
+# TLS test certificates.
+trustme
+
 # Testing.
 pytest
-trustme
 pytest-timeout
 
 # Publishing.
