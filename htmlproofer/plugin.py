@@ -1,6 +1,7 @@
 import concurrent.futures
 import fnmatch
 from functools import lru_cache, partial
+import math
 import os.path
 import pathlib
 import re
@@ -101,7 +102,9 @@ class HtmlProoferPlugin(BasePlugin):
         ('raise_error', config_options.Type(bool, default=False)),
         ('raise_error_after_finish', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
-        ('skip_downloads', config_options.Type(bool, default=False)),
+        ('skip_downloads', config_options.Type(bool, default=True)),
+        ('max_download_bytes', config_options.Type(int, default=10 * 1024 * 1024)),
+        ('request_timeout', config_options.Type(float, default=30.0)),
         ('allow_private_hosts', config_options.ListOfItems(config_options.Type(str), default=[])),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
@@ -142,7 +145,7 @@ class HtmlProoferPlugin(BasePlugin):
             session.trust_env = False
             session.verify = False
             session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent'],
-                                    'Connection': 'close'})
+                                    'Connection': 'close', 'Accept-Encoding': 'identity'})
             session.max_redirects = 5
             adapter = CheckedAdapter(self.config['allow_private_hosts'])
             session.mount('http://', adapter)
@@ -264,19 +267,30 @@ class HtmlProoferPlugin(BasePlugin):
             return -1
 
     def fetch_web_url_status(self, url: str) -> int:
+        session = self._get_session()
+        adapter = session.get_adapter(url)
+        assert isinstance(adapter, CheckedAdapter)
+        duration = self.config['request_timeout']
+        if not math.isfinite(duration) or duration <= 0 or self.config['max_download_bytes'] <= 0:
+            raise PluginError('request_timeout must be positive and finite; max_download_bytes must be positive')
+        adapter.begin(duration)
         try:
-            return self.fetch_redirect_chain(self._get_session(), url)
+            return self.fetch_redirect_chain(session, adapter, url)
         except requests.exceptions.Timeout:
             return 504
         except MALFORMED_URL_ERRORS:
             raise
         except requests.exceptions.RequestException:
-            return -1
+            # e.g. ConnectionError, TooManyRedirects, InvalidURL, ChunkedEncodingError
+            return 504 if time.monotonic() >= adapter.deadline else -1
+        finally:
+            adapter.end()
 
-    def fetch_redirect_chain(self, session, url: str) -> int:
+    def fetch_redirect_chain(self, session, adapter, url: str) -> int:
         for hop in range(session.max_redirects + 1):
             url_host(url)
-            response = session.get(url, timeout=URL_TIMEOUT, stream=True, allow_redirects=False)
+            timeout = min(URL_TIMEOUT, adapter.remaining())
+            response = session.get(url, timeout=timeout, stream=True, allow_redirects=False)
             try:
                 location = response.headers.get('Location')
                 if response.status_code in (301, 302, 303, 307, 308) and location:
@@ -287,12 +301,30 @@ class HtmlProoferPlugin(BasePlugin):
                     url = target
                 else:
                     if not self.config['skip_downloads']:
-                        for _ in response.iter_content(chunk_size=1024 * 1024):
-                            pass
+                        self.consume_response(response, adapter)
+                    adapter.check_deadline()
                     return response.status_code
             finally:
                 response.close()
         return -1
+
+    def consume_response(self, response, adapter) -> None:
+        limit = self.config['max_download_bytes']
+        # Status validation needs no decompression. Request identity encoding and reject a
+        # server that ignores it when body downloads are explicitly enabled.
+        if response.headers.get('Content-Encoding', 'identity').lower() != 'identity':
+            raise requests.exceptions.InvalidURL('encoded response bodies are not downloaded')
+        length = response.headers.get('Content-Length')
+        if length and length.isdecimal():
+            significant = length.lstrip('0') or '0'
+            if len(significant) > len(str(limit)) or int(significant) > limit:
+                raise requests.exceptions.InvalidURL('response exceeds max_download_bytes')
+        downloaded = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            adapter.check_deadline()
+            downloaded += len(chunk)
+            if downloaded > limit:
+                raise requests.exceptions.InvalidURL('response exceeds max_download_bytes')
 
     def check_url(
             self,

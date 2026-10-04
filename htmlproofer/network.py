@@ -2,7 +2,9 @@
 
 import ipaddress
 import socket
-from typing import List
+import threading
+import time
+from typing import List, Optional
 import urllib.parse
 
 import requests
@@ -61,14 +63,18 @@ def connect_checked(connection, adapter):
     # again, allowing the destination to change between validation and connection.
     error = None
     for family, kind, proto, _, sockaddr in addresses:
+        adapter.check_deadline()
         sock = socket.socket(family, kind, proto)
         try:
-            sock.settimeout(connection.timeout)
+            sock.settimeout(min(connection.timeout, adapter.remaining()))
             for option in connection.socket_options or []:
                 sock.setsockopt(*option)
             if connection.source_address:
                 sock.bind(connection.source_address)
             sock.connect(sockaddr)
+            # On Windows a duplicate made before connect can retain an unconnected state,
+            # so its shutdown cannot interrupt reads on the connected socket.
+            adapter.watch(sock)
             return sock
         except requests.exceptions.RequestException:
             sock.close()
@@ -86,6 +92,10 @@ class CheckedAdapter(requests.adapters.HTTPAdapter):
 
     def __init__(self, allowed_hosts: List[str]):
         self.allowed_hosts = {host.encode('idna').decode('ascii').lower().rstrip('.') for host in allowed_hosts}
+        self.deadline = 0.0
+        self._lock = threading.Lock()
+        self._sockets: List[socket.socket] = []
+        self._timer: Optional[threading.Timer] = None
         super().__init__()
 
     def init_poolmanager(self, *args, **kwargs):
@@ -107,6 +117,48 @@ class CheckedAdapter(requests.adapters.HTTPAdapter):
 
         super().init_poolmanager(*args, **kwargs)
         self.poolmanager.pool_classes_by_scheme = {'http': HTTPPool, 'https': HTTPSPool}
+
+    def begin(self, duration: float) -> None:
+        self.deadline = time.monotonic() + duration
+        self._timer = threading.Timer(duration, self._expire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def remaining(self) -> float:
+        self.check_deadline()
+        return self.deadline - time.monotonic()
+
+    def check_deadline(self) -> None:
+        if time.monotonic() >= self.deadline:
+            raise requests.exceptions.Timeout('external check exceeded its total deadline')
+
+    def watch(self, sock: socket.socket) -> None:
+        with self._lock:
+            self.check_deadline()
+            # A connected duplicate retains access to the transport after TLS wraps the
+            # original socket. Shutdown interrupts reads even during headers/decompression,
+            # when a progressing server might never yield an iter_content chunk.
+            self._sockets.append(sock.dup())
+
+    def _expire(self) -> None:
+        with self._lock:
+            for sock in self._sockets:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+
+    def end(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer.join()
+        with self._lock:
+            for sock in self._sockets:
+                sock.close()
+            self._sockets.clear()
+        # Servers may ignore Connection: close. A pooled connection must not survive its
+        # watchdog, otherwise a later request could reuse a socket with no active deadline.
+        self.close()
 
 
 class CheckSession(requests.Session):
