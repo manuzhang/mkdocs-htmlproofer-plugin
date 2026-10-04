@@ -9,7 +9,7 @@ import time
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple, Union
 import urllib.parse
 
-from bs4 import BeautifulSoup, SoupStrainer
+from bs4 import BeautifulSoup, SoupStrainer, Tag
 from markdown.extensions.toc import slugify
 from mkdocs import utils
 from mkdocs.config import Config, config_options
@@ -73,12 +73,21 @@ def read_anchors(rendered_content: str) -> FrozenSet[str]:
     # A template's contents are inert, so a fragment can't navigate to the ids within it, though
     # the template element itself stays in the document and keeps its own id
 
-    def navigable(tag) -> bool:
-        return tag.find_parent('template') is None
-
-    # `name` makes an anchor navigable, as an older form of `id`
-    return frozenset({str(tag['id']) for tag in soup.select('[id]') if navigable(tag)}
-                     | {str(tag['name']) for tag in soup.select('a[name]') if navigable(tag)})
+    anchors: Set[str] = set()
+    # Iterate siblings with an explicit stack, so each edge is visited once without recursion.
+    stack = [iter(soup.children)]
+    while stack:
+        tag = next(stack[-1], None)
+        if tag is None:
+            stack.pop()
+        elif isinstance(tag, Tag):
+            if 'id' in tag.attrs:
+                anchors.add(str(tag['id']))
+            if tag.name == 'a' and 'name' in tag.attrs:
+                anchors.add(str(tag['name']))
+            if tag.name != 'template':
+                stack.append(iter(tag.children))
+    return frozenset(anchors)
 
 
 def log_info(msg, *args, **kwargs):
