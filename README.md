@@ -143,13 +143,35 @@ plugins:
 
 ### `validate_external_urls`
 
-Avoids validating any external URLs (i.e those starting with http:// or https://).
-This will be faster if you just want to validate local anchors, as it does not make any network requests.
+Enabled by default. Set it to `False` to validate local links and anchors without making any
+network requests. Disable external checks when building documentation from untrusted contributors
+if outbound requests are not needed; enforce build-host egress restrictions as additional protection.
+
+External checks only connect to public IPv4/IPv6 addresses by default. All resolved addresses must
+be public, including on redirect hops. Private, loopback, link-local, multicast, reserved, and
+translation/tunnel destinations are rejected as `-1`. Localhost links previously skipped implicitly
+now follow this policy; use `ignore_urls` to skip intentional example URLs.
+
+Checks reject credentials in URLs. Environment proxies and netrc credentials are not used.
 
 ```yaml
 plugins:
   - htmlproofer:
       validate_external_urls: False
+```
+
+### `allow_private_hosts`
+
+An empty list by default. Trusted site operators can permit intentional internal checks by listing
+exact hostnames or IP literals (without schemes, paths, ports, or wildcards). Each listed host can
+connect to its resolved addresses, including private ones. Redirects to other hosts still require
+their own permission. Only allow hosts whose access is appropriate for every documentation
+contributor; a hostname permission also trusts that host's DNS administrator.
+
+```yaml
+plugins:
+  - htmlproofer:
+      allow_private_hosts: ['docs.internal.example']
 ```
 
 ### `validate_rendered_template`
