@@ -38,8 +38,6 @@ LOCAL_PATTERNS = [
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
 SETEXT_UNDERLINE_PATTERN = re.compile(r' {0,3}(?:=+|-+)\s*$')
 HTML_LINK_PATTERN = re.compile(r'<a (?:id|name)=\"([^\"]+)\">')
-ATTRLIST_PATTERN = re.compile(r'\{.*?\}')
-ATTRLIST_ANCHOR_PATTERN = re.compile(r'\{.*?\#([^\s\}]*).*?\}')
 IMAGE_PATTERN = re.compile(r'\[\!\[.*\]\(.*\)\].*|\!\[.*\]\[.*\].*')
 
 # Example emojis:
@@ -57,6 +55,25 @@ MALFORMED_URL_ERRORS = (
 )
 
 urllib3.disable_warnings()
+
+
+def attribute_lists(text: str):
+    """Yield non-overlapping brace spans in one pass, including nested opening braces."""
+    start = None
+    for index, character in enumerate(text):
+        if character == '{' and start is None:
+            start = index
+        elif character == '}' and start is not None:
+            yield start, index + 1
+            start = None
+
+
+def attribute_anchors(text: str):
+    for start, end in attribute_lists(text):
+        contents = text[start + 1:end - 1]
+        _, marker, rest = contents.partition('#')
+        if marker:
+            yield rest.split(None, 1)[0] if rest and not rest[0].isspace() else ''
 
 
 @lru_cache(maxsize=1024)
@@ -447,7 +464,7 @@ class HtmlProoferPlugin(BasePlugin):
 
             # Any attribute list at end of paragraphs or after images can also generate an anchor (in
             # addition to the heading ones) so gather those and check as well
-            if anchor in re.findall(ATTRLIST_ANCHOR_PATTERN, line):
+            if anchor in attribute_anchors(line):
                 return True
 
         return False
@@ -455,7 +472,13 @@ class HtmlProoferPlugin(BasePlugin):
     @staticmethod
     def heading_anchor(heading: str) -> str:
         """The anchor a heading provides, slugified from its Markdown source."""
-        heading = re.sub(ATTRLIST_PATTERN, '', heading)
+        parts = []
+        previous = 0
+        for start, end in attribute_lists(heading):
+            parts.append(heading[previous:start])
+            previous = end
+        parts.append(heading[previous:])
+        heading = ''.join(parts)
         heading = re.sub(IMAGE_PATTERN, '', heading)
         heading = re.sub(EMOJI_PATTERN, '', heading)
         return slugify(heading, '-')
