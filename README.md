@@ -210,13 +210,39 @@ plugins:
 
 ### `skip_downloads`
 
-Optionally skip downloading of a remote URLs content via GET request. This can
-considerably reduce the time taken to validate URLs.
+Defaults to `True`: perform a streaming GET, inspect status/redirect headers, then close the response
+without downloading its body. GET-only servers remain supported. Redirect bodies are always skipped.
+Set it to `False` to consume the final response body within the byte and time limits below. Requests
+ask for identity encoding; encoded bodies are rejected when downloads are enabled to avoid
+unbounded decompression work.
 
 ```yaml
 plugins:
   - htmlproofer:
       skip_downloads: True
+```
+
+### `max_download_bytes`
+
+Limits body consumption when `skip_downloads` is `False`. Defaults to 10485760 bytes (10 MiB),
+must be positive, and applies to observed bytes even if Content-Length is absent or incorrect.
+An excessive declared or observed size is reported as `-1`.
+
+### `request_timeout`
+
+A positive, finite total time budget in seconds for one external check attempt, including all its
+redirects and optional body reads. Defaults to `30.0`. A socket deadline interrupts continuously
+progressing reads; individual connection/read inactivity is also limited to ten seconds. Expiration
+is reported as `504`. DNS resolution uses the platform resolver; if it stalls, its operating-system
+timeout still applies, and no connection is made after the check's deadline has expired.
+Each configured retry gets a fresh budget; backoff delays are additional.
+
+```yaml
+plugins:
+  - htmlproofer:
+      skip_downloads: False
+      max_download_bytes: 1048576
+      request_timeout: 15.0
 ```
 
 ### `retry_max_times`

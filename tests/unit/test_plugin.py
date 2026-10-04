@@ -855,6 +855,7 @@ def test_resolve_web_scheme__response_is_closed(mock_requests, skip_downloads):
 
 
 def test_resolve_web_scheme__download_error(plugin, mock_requests):
+    plugin.config['skip_downloads'] = False
     response = mock_response(200)
     response.iter_content.side_effect = requests.exceptions.ChunkedEncodingError()
     mock_requests.side_effect = [response]
