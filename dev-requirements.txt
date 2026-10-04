@@ -12,6 +12,9 @@ types-Markdown
 # Formatting.
 isort
 
+# TLS test certificates.
+trustme
+
 # Testing.
 pytest
 pytest-timeout
