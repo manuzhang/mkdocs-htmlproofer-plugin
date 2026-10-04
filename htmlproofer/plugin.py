@@ -20,6 +20,8 @@ from mkdocs.structure.pages import Page
 import requests
 import urllib3
 
+from htmlproofer.network import CheckedAdapter, CheckSession, url_host
+
 URL_TIMEOUT = 10.0
 # Sites and the CDNs in front of them increasingly answer anything which doesn't look like a browser
 # with a 403, which reads as a broken link although the page opens in one
@@ -29,10 +31,6 @@ URL_HEADERS = {'User-Agent': DEFAULT_USER_AGENT, 'Accept-Language': '*'}
 NAME = "htmlproofer"
 
 MARKDOWN_ANCHOR_PATTERN = re.compile(r'([^#]+)(#(.+))?')
-LOCAL_PATTERNS = [
-    re.compile(rf'https?://{local}')
-    for local in ('localhost', '127.0.0.1', 'app_server')
-]
 
 # Patterns for the anchors a Markdown source provides, which are accepted without `strict_anchors`
 HEADING_PATTERN = re.compile(r'\s*#+\s*(.*)')
@@ -55,6 +53,7 @@ MALFORMED_URL_ERRORS = (
     requests.exceptions.InvalidSchema,
     requests.exceptions.MissingSchema,
 )
+
 
 urllib3.disable_warnings()
 
@@ -103,6 +102,7 @@ class HtmlProoferPlugin(BasePlugin):
         ('raise_error_after_finish', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
         ('skip_downloads', config_options.Type(bool, default=False)),
+        ('allow_private_hosts', config_options.ListOfItems(config_options.Type(str), default=[])),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
         ('strict_anchors', config_options.Type(bool, default=False)),
@@ -138,10 +138,15 @@ class HtmlProoferPlugin(BasePlugin):
         """Return a per-thread `requests.Session`, creating one lazily if needed."""
         session = getattr(self._local, 'session', None)
         if session is None:
-            session = requests.Session()
+            session = CheckSession()
+            session.trust_env = False
             session.verify = False
-            session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent']})
+            session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent'],
+                                    'Connection': 'close'})
             session.max_redirects = 5
+            adapter = CheckedAdapter(self.config['allow_private_hosts'])
+            session.mount('http://', adapter)
+            session.mount('https://', adapter)
             self._local.session = session
         return session
 
@@ -260,24 +265,34 @@ class HtmlProoferPlugin(BasePlugin):
 
     def fetch_web_url_status(self, url: str) -> int:
         try:
-            response = self._get_session().get(url, timeout=URL_TIMEOUT, stream=True)
-            try:
-                if self.config['skip_downloads'] is False:
-                    # Download the entire contents as to not break previous behaviour.
-                    for _ in response.iter_content(chunk_size=1024 * 1024):
-                        pass
-
-                return response.status_code
-            finally:
-                # Release the connection, which is kept open by `stream=True` otherwise.
-                response.close()
+            return self.fetch_redirect_chain(self._get_session(), url)
         except requests.exceptions.Timeout:
             return 504
         except MALFORMED_URL_ERRORS:
             raise
         except requests.exceptions.RequestException:
-            # e.g. ConnectionError, TooManyRedirects, InvalidURL, ChunkedEncodingError
             return -1
+
+    def fetch_redirect_chain(self, session, url: str) -> int:
+        for hop in range(session.max_redirects + 1):
+            url_host(url)
+            response = session.get(url, timeout=URL_TIMEOUT, stream=True, allow_redirects=False)
+            try:
+                location = response.headers.get('Location')
+                if response.status_code in (301, 302, 303, 307, 308) and location:
+                    if hop == session.max_redirects:
+                        raise requests.exceptions.TooManyRedirects()
+                    target = urllib.parse.urljoin(url, location)
+                    url_host(target)
+                    url = target
+                else:
+                    if not self.config['skip_downloads']:
+                        for _ in response.iter_content(chunk_size=1024 * 1024):
+                            pass
+                    return response.status_code
+            finally:
+                response.close()
+        return -1
 
     def check_url(
             self,
@@ -313,9 +328,6 @@ class HtmlProoferPlugin(BasePlugin):
             all_element_ids: Set[str],
             files: Dict[str, File]
     ) -> int:
-        if any(pat.match(url) for pat in LOCAL_PATTERNS):
-            return 0
-
         scheme, _, path, _, fragment = urllib.parse.urlsplit(url)
         if scheme:
             if self.config['validate_external_urls']:

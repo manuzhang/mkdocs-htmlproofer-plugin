@@ -24,6 +24,7 @@ setup(
         'mkdocs>=1.4.0',
         'Markdown',
         'requests',
+        'urllib3>=1.26',
         'beautifulsoup4',
     ],
     classifiers=[
