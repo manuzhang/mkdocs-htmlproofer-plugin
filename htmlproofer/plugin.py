@@ -55,6 +55,7 @@ MALFORMED_URL_ERRORS = (
     requests.exceptions.MissingSchema,
 )
 
+
 @lru_cache(maxsize=1024)
 def parse_anchors(rendered_content: str) -> FrozenSet[str]:
     """The anchors of a page kept elsewhere, such as a page's body, parsed once per page.
