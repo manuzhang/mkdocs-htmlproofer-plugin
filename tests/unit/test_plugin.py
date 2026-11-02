@@ -219,10 +219,19 @@ def test_on_post_page__warn_on_ignored_urls(log_warning_mock, warn_on_ignored_ur
         'http://app_server/#foo',
     ),
 )
-def test_get_url_status__local_servers_use_destination_policy(plugin, empty_files, url):
+def test_get_url_status__local_servers_are_skipped(plugin, empty_files, url):
+    with patch.object(plugin, 'get_external_url', return_value=-1) as resolve:
+        plugin.config['raise_error'] = True
+        plugin.check_url(url, 'src/path.md', set(), empty_files)
+        resolve.assert_not_called()
+
+
+@pytest.mark.parametrize('host', ['localhost.example', '127.0.0.10', 'app_server.example'])
+def test_get_url_status__similar_hostnames_are_checked(plugin, empty_files, host):
+    url = 'http://' + host + '/'
     with patch.object(plugin, 'get_external_url', return_value=-1) as resolve:
         assert plugin.get_url_status(url, 'src/path.md', set(), empty_files) == -1
-        resolve.assert_called_once_with(url, url.split(':')[0], 'src/path.md')
+    resolve.assert_called_once_with(url, 'http', 'src/path.md')
 
 
 @pytest.mark.parametrize(
@@ -1033,8 +1042,8 @@ def test_resolve_web_scheme__no_retry_for_malformed_url(sleep_mock, mock_request
     plugin.load_config({'retry_max_times': 3})
     mock_requests.side_effect = requests.exceptions.InvalidURL("No host supplied")
 
-    assert plugin.resolve_web_scheme('http://') == -1
-    assert mock_requests.call_count == 0
+    assert plugin.resolve_web_scheme('https://example.com') == -1
+    assert mock_requests.call_count == 1
     sleep_mock.assert_not_called()
 
 

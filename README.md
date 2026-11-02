@@ -149,8 +149,12 @@ if outbound requests are not needed; enforce build-host egress restrictions as a
 
 External checks only connect to public IPv4/IPv6 addresses by default. All resolved addresses must
 be public, including on redirect hops. Private, loopback, link-local, multicast, reserved, and
-translation/tunnel destinations are rejected as `-1`. Localhost links previously skipped implicitly
-now follow this policy; use `ignore_urls` to skip intentional example URLs.
+other special-purpose destinations are rejected as `-1`. IPv4-mapped IPv6, well-known NAT64
+(`64:ff9b::/96`), and 6to4 addresses are checked using their embedded IPv4 address.
+
+Direct links to the example hosts `localhost`, `127.0.0.1`, and `app_server` continue to be skipped
+without a request, including URLs with ports. This skip does not apply to redirect targets or
+similar-looking names such as `localhost.example`. Use `ignore_urls` for other example URLs.
 
 Checks reject credentials in URLs. Environment proxies and netrc credentials are not used.
 
@@ -165,13 +169,38 @@ plugins:
 An empty list by default. Trusted site operators can permit intentional internal checks by listing
 exact hostnames or IP literals (without schemes, paths, ports, or wildcards). Each listed host can
 connect to its resolved addresses, including private ones. Redirects to other hosts still require
-their own permission. Only allow hosts whose access is appropriate for every documentation
-contributor; a hostname permission also trusts that host's DNS administrator.
+their own permission. Entries are validated when MkDocs loads the configuration, including
+international hostnames, which use the same IDNA encoding as Requests. If a VPN resolves a public
+name to a private address, list that exact name here to permit the check. Only allow hosts whose
+access is appropriate for every documentation contributor; a hostname permission also trusts that
+host's DNS administrator.
 
 ```yaml
 plugins:
   - htmlproofer:
       allow_private_hosts: ['docs.internal.example']
+```
+
+### `proxies`
+
+An empty mapping by default. Configure an explicit trusted HTTP(S) proxy for `http` and/or `https`
+checks when the build requires one. Environment proxy variables and netrc credentials remain
+unused. Proxy credentials can be included in the configured proxy URL.
+
+The destination's locally resolved addresses are checked before sending an HTTP request or HTTPS
+CONNECT to the proxy, including for each redirect. Destination names must also resolve on the build
+host. Unconfigured proxies are rejected by the
+adapter even if environment proxy discovery is enabled elsewhere. The proxy performs its own
+resolution and connection, so use an operator-controlled proxy that enforces the destination policy
+on its own DNS results; local checks cannot pin the proxy's remote connection. `allow_private_hosts`
+also applies to explicitly permitted destinations reached through a proxy.
+
+```yaml
+plugins:
+  - htmlproofer:
+      proxies:
+        http: http://proxy.corp.example:8080
+        https: http://proxy.corp.example:8080
 ```
 
 ### `validate_rendered_template`

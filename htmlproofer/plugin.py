@@ -13,13 +13,14 @@ from bs4 import BeautifulSoup, SoupStrainer
 from markdown.extensions.toc import slugify
 from mkdocs import utils
 from mkdocs.config import Config, config_options
+from mkdocs.config.base import ValidationError
 from mkdocs.exceptions import PluginError
 from mkdocs.plugins import BasePlugin
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
 import requests
 
-from htmlproofer.network import CheckedAdapter, CheckSession, url_host
+from htmlproofer.network import CheckedAdapter, CheckSession, normalize_host, url_host
 
 URL_TIMEOUT = 10.0
 # Sites and the CDNs in front of them increasingly answer anything which doesn't look like a browser
@@ -53,6 +54,37 @@ MALFORMED_URL_ERRORS = (
     requests.exceptions.MissingSchema,
 )
 
+
+class PrivateHost(config_options.Type):
+    def __init__(self):
+        super().__init__(str)
+
+    def run_validation(self, value):
+        value = super().run_validation(value)
+        try:
+            return normalize_host(value)
+        except (ValueError, UnicodeError, requests.exceptions.InvalidURL) as error:
+            raise ValidationError(f'Invalid allow_private_hosts entry {value!r}: {error}') from error
+
+
+class Proxies(config_options.Type):
+    def __init__(self):
+        super().__init__(dict, default={})
+
+    def run_validation(self, value):
+        value = super().run_validation(value)
+        for scheme, proxy in value.items():
+            try:
+                if scheme not in ('http', 'https') or not isinstance(proxy, str):
+                    raise ValueError('use http/https keys and HTTP(S) proxy URL values')
+                parsed = urllib.parse.urlsplit(proxy)
+                if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.port == 0
+                        or parsed.path not in ('', '/') or parsed.query or parsed.fragment):
+                    raise ValueError('expected an HTTP(S) proxy URL without a path, query, or fragment')
+                normalize_host(parsed.hostname)
+            except (ValueError, UnicodeError, requests.exceptions.InvalidURL) as error:
+                raise ValidationError(f'Invalid proxies entry {scheme!r}: {error}') from error
+        return value
 
 
 @lru_cache(maxsize=1024)
@@ -99,7 +131,8 @@ class HtmlProoferPlugin(BasePlugin):
         ('raise_error_after_finish', config_options.Type(bool, default=False)),
         ('raise_error_excludes', config_options.Type(dict, default={})),
         ('skip_downloads', config_options.Type(bool, default=False)),
-        ('allow_private_hosts', config_options.ListOfItems(config_options.Type(str), default=[])),
+        ('allow_private_hosts', config_options.ListOfItems(PrivateHost(), default=[])),
+        ('proxies', Proxies()),
         ('validate_external_urls', config_options.Type(bool, default=True)),
         ('validate_rendered_template', config_options.Type(bool, default=False)),
         ('strict_anchors', config_options.Type(bool, default=False)),
@@ -137,10 +170,10 @@ class HtmlProoferPlugin(BasePlugin):
         if session is None:
             session = CheckSession()
             session.trust_env = False
-            session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent'],
-                                    'Connection': 'close'})
+            session.proxies.update(self.config['proxies'])
+            session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent']})
             session.max_redirects = 5
-            adapter = CheckedAdapter(self.config['allow_private_hosts'])
+            adapter = CheckedAdapter(self.config['allow_private_hosts'], self.config['proxies'])
             session.mount('http://', adapter)
             session.mount('https://', adapter)
             self._local.session = session
@@ -270,17 +303,18 @@ class HtmlProoferPlugin(BasePlugin):
             return -1
 
     def fetch_redirect_chain(self, session, url: str) -> int:
-        for hop in range(session.max_redirects + 1):
+        hop = 0
+        while True:
             url_host(url)
             response = session.get(url, timeout=URL_TIMEOUT, stream=True, allow_redirects=False)
             try:
-                location = response.headers.get('Location')
-                if response.status_code in (301, 302, 303, 307, 308) and location:
+                location = (session.get_redirect_target(response)
+                            if response.status_code in (301, 302, 303, 307, 308) else None)
+                if location:
                     if hop == session.max_redirects:
                         raise requests.exceptions.TooManyRedirects()
-                    target = urllib.parse.urljoin(url, location)
-                    url_host(target)
-                    url = target
+                    url = urllib.parse.urljoin(url, location)
+                    hop += 1
                 else:
                     if not self.config['skip_downloads']:
                         for _ in response.iter_content(chunk_size=1024 * 1024):
@@ -288,7 +322,6 @@ class HtmlProoferPlugin(BasePlugin):
                     return response.status_code
             finally:
                 response.close()
-        return -1
 
     def check_url(
             self,
@@ -324,7 +357,12 @@ class HtmlProoferPlugin(BasePlugin):
             all_element_ids: Set[str],
             files: Dict[str, File]
     ) -> int:
-        scheme, _, path, _, fragment = urllib.parse.urlsplit(url)
+        parsed = urllib.parse.urlsplit(url)
+        # Preserve the historical example-host skips without prefix matches such as
+        # localhost.example or 127.0.0.10. Redirect destinations still use socket policy.
+        if parsed.scheme in ('http', 'https') and parsed.hostname in ('localhost', '127.0.0.1', 'app_server'):
+            return 0
+        scheme, _, path, _, fragment = parsed
         if scheme:
             if self.config['validate_external_urls']:
                 return self.get_external_url(url, scheme, src_path)
