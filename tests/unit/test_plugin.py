@@ -138,6 +138,79 @@ def test_on_post_page__img_without_src():
     plugin.on_post_page('<img data-src="lazy-loaded.png" />', page, Mock(spec=Config))
 
 
+def _page(src_path):
+    return Mock(
+        spec=Page,
+        file=Mock(spec=File, src_path=src_path, src_uri=src_path),
+        content='',
+    )
+
+
+@pytest.mark.parametrize(
+    'ignore_page',
+    ('docs/drafts/notes.md', 'docs/drafts/*', 'docs/*/notes.md', 'docs/drafts/note?.md'),
+)
+def test_on_post_page__ignore_pages(ignore_page):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'validate_rendered_template': True,
+        'raise_error': True,
+        'ignore_pages': [ignore_page],
+    })
+    plugin.on_post_page('<a href="not-existing.html">x</a>', _page('docs/drafts/notes.md'), Mock(spec=Config))
+
+
+def test_on_post_page__ignore_pages_still_checks_other_pages():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'validate_rendered_template': True,
+        'raise_error': True,
+        'ignore_pages': ['docs/drafts/*'],
+    })
+    with pytest.raises(PluginError):
+        plugin.on_post_page('<a href="not-existing.html">x</a>', _page('docs/guide.md'), Mock(spec=Config))
+
+
+@pytest.mark.parametrize('ignore_url', ('not-existing.html', 'not-*', 'not-existing.htm?'))
+def test_on_post_page__ignore_urls(ignore_url):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'validate_rendered_template': True,
+        'raise_error': True,
+        'ignore_urls': [ignore_url],
+    })
+    plugin.on_post_page('<a href="not-existing.html">x</a>', _page('docs/guide.md'), Mock(spec=Config))
+
+
+def test_on_post_page__ignore_urls_still_checks_other_urls():
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'validate_rendered_template': True,
+        'raise_error': True,
+        'ignore_urls': ['https://github.com/myprivateorg/*'],
+    })
+    with pytest.raises(PluginError):
+        plugin.on_post_page('<a href="not-existing.html">x</a>', _page('docs/guide.md'), Mock(spec=Config))
+
+
+@pytest.mark.parametrize('option, pattern', (('ignore_urls', 'not-existing.html'), ('ignore_pages', 'docs/*')))
+@pytest.mark.parametrize('warn_on_ignored_urls', (False, True))
+@patch.object(htmlproofer.plugin, "log_warning", autospec=True)
+def test_on_post_page__warn_on_ignored_urls(log_warning_mock, warn_on_ignored_urls, option, pattern):
+    plugin = HtmlProoferPlugin()
+    plugin.load_config({
+        'validate_rendered_template': True,
+        'raise_error': True,
+        option: [pattern],
+        'warn_on_ignored_urls': warn_on_ignored_urls,
+    })
+    plugin.on_post_page('<a href="not-existing.html">x</a>', _page('docs/guide.md'), Mock(spec=Config))
+    if warn_on_ignored_urls:
+        log_warning_mock.assert_called_once_with('ignoring URL not-existing.html from docs/guide.md')
+    else:
+        log_warning_mock.assert_not_called()
+
+
 @pytest.mark.parametrize(
     'url',
     (
