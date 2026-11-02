@@ -941,6 +941,17 @@ def test_get_session__user_agent_can_be_configured():
     assert plugin._get_session().headers['User-Agent'] == 'Bot (https://example.com/)'
 
 
+def test_check_url__bad_certificate_url_is_invalid(plugin, mock_requests):
+    # TLS verification must stay on: with it, a bad certificate fails the
+    # request, and the URL reports invalid instead of passing as a valid link
+    assert plugin._get_session().verify is True
+    mock_requests.side_effect = requests.exceptions.SSLError("bad certificate")
+    plugin.config['raise_error'] = True
+
+    with pytest.raises(PluginError):
+        plugin.check_url('https://bad-certificate.example.com', 'index.md', set(), {})
+
+
 @patch.object(htmlproofer.plugin.time, "sleep", autospec=True)
 def test_resolve_web_scheme__no_retry_for_malformed_url(sleep_mock, mock_requests):
     plugin = HtmlProoferPlugin()
