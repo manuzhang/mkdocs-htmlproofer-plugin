@@ -18,7 +18,6 @@ from mkdocs.plugins import BasePlugin
 from mkdocs.structure.files import File, Files
 from mkdocs.structure.pages import Page
 import requests
-import urllib3
 
 URL_TIMEOUT = 10.0
 # Sites and the CDNs in front of them increasingly answer anything which doesn't look like a browser
@@ -55,8 +54,6 @@ MALFORMED_URL_ERRORS = (
     requests.exceptions.InvalidSchema,
     requests.exceptions.MissingSchema,
 )
-
-urllib3.disable_warnings()
 
 
 @lru_cache(maxsize=1024)
@@ -139,7 +136,6 @@ class HtmlProoferPlugin(BasePlugin):
         session = getattr(self._local, 'session', None)
         if session is None:
             session = requests.Session()
-            session.verify = False
             session.headers.update({**URL_HEADERS, 'User-Agent': self.config['user_agent']})
             session.max_redirects = 5
             self._local.session = session
