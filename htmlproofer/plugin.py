@@ -20,6 +20,11 @@ from mkdocs.structure.pages import Page
 import requests
 
 URL_TIMEOUT = 10.0
+# The start of a body shows that the server delivers it as well as the whole of it would, so a
+# download stops after this many bytes or seconds, whichever comes first
+MAX_DOWNLOAD_BYTES = 1024 * 1024
+MAX_DOWNLOAD_SECONDS = 10.0
+DOWNLOAD_CHUNK_SIZE = 64 * 1024
 # Sites and the CDNs in front of them increasingly answer anything which doesn't look like a browser
 # with a 403, which reads as a broken link although the page opens in one
 DEFAULT_USER_AGENT = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -76,6 +81,17 @@ def read_anchors(rendered_content: str) -> FrozenSet[str]:
     # `name` makes an anchor navigable, as an older form of `id`
     return frozenset({str(tag['id']) for tag in soup.select('[id]') if navigable(tag)}
                      | {str(tag['name']) for tag in soup.select('a[name]') if navigable(tag)})
+
+
+def read_body_start(response: requests.Response) -> None:
+    """Read a response's body until it ends or the download limits are reached, so a large or
+    slow body can't hold up the check. What's read is discarded."""
+    deadline = time.monotonic() + MAX_DOWNLOAD_SECONDS
+    downloaded = 0
+    for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+        downloaded += len(chunk)
+        if downloaded >= MAX_DOWNLOAD_BYTES or time.monotonic() >= deadline:
+            break
 
 
 def log_info(msg, *args, **kwargs):
@@ -259,9 +275,7 @@ class HtmlProoferPlugin(BasePlugin):
             response = self._get_session().get(url, timeout=URL_TIMEOUT, stream=True)
             try:
                 if self.config['skip_downloads'] is False:
-                    # Download the entire contents as to not break previous behaviour.
-                    for _ in response.iter_content(chunk_size=1024 * 1024):
-                        pass
+                    read_body_start(response)
 
                 return response.status_code
             finally:

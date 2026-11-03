@@ -191,6 +191,9 @@ plugins:
 Optionally skip downloading of a remote URLs content via GET request. This can
 considerably reduce the time taken to validate URLs.
 
+When downloads aren't skipped, each body is read until it ends, 1 MiB has arrived or 10 seconds
+have passed, whichever comes first. A larger or slower body isn't reported as a broken link.
+
 ```yaml
 plugins:
   - htmlproofer:

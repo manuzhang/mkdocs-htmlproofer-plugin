@@ -1,3 +1,4 @@
+import itertools
 import os.path
 from unittest.mock import Mock, patch
 
@@ -922,6 +923,32 @@ def test_resolve_web_scheme__response_is_closed(mock_requests, skip_downloads):
 
     assert plugin.resolve_web_scheme('https://example.com') == 200
     assert response.iter_content.called != skip_downloads
+    response.close.assert_called_once()
+
+
+@patch.object(htmlproofer.plugin, 'MAX_DOWNLOAD_BYTES', 10)
+def test_resolve_web_scheme__download_stops_at_byte_limit(plugin, mock_requests):
+    chunks = iter([b'1234'] * 100)
+    response = mock_response(200)
+    response.iter_content.return_value = chunks
+    mock_requests.side_effect = [response]
+
+    assert plugin.resolve_web_scheme('https://example.com') == 200
+    # Three chunks make 12 bytes, which reaches the limit, so the rest are left unread
+    assert len(list(chunks)) == 97
+    response.close.assert_called_once()
+
+
+def test_resolve_web_scheme__download_stops_at_time_limit(plugin, mock_requests):
+    chunks = iter([b'1'] * 100)
+    response = mock_response(200)
+    response.iter_content.return_value = chunks
+    mock_requests.side_effect = [response]
+
+    # The clock advances 4 seconds per reading, so the third chunk passes the 10 second limit
+    with patch.object(htmlproofer.plugin.time, 'monotonic', side_effect=itertools.count(step=4)):
+        assert plugin.resolve_web_scheme('https://example.com') == 200
+    assert len(list(chunks)) == 97
     response.close.assert_called_once()
 
 
